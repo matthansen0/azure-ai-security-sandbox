@@ -5,7 +5,6 @@ param frontDoorProfileName string
 param frontDoorEndpointName string
 param wafPolicyName string
 param originHostName string
-param appServiceResourceId string
 
 // Front Door Premium Profile (required for WAF)
 resource frontDoorProfile 'Microsoft.Cdn/profiles@2024-02-01' = {

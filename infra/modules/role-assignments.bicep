@@ -28,7 +28,7 @@ var cognitiveServicesOpenAIUserRole = subscriptionResourceId('Microsoft.Authoriz
 var searchIndexDataContributorRole = subscriptionResourceId('Microsoft.Authorization/roleDefinitions', '8ebe5a00-799e-43f5-93ac-243d3dce84a7')
 var searchServiceContributorRole = subscriptionResourceId('Microsoft.Authorization/roleDefinitions', '7ca78c08-252a-4471-8644-bb5ff32d4ba0')
 var storageBlobDataContributorRole = subscriptionResourceId('Microsoft.Authorization/roleDefinitions', 'ba92f5b4-2d11-453d-a403-e96b0029c9fe')
-var cosmosDbDataContributorRole = subscriptionResourceId('Microsoft.Authorization/roleDefinitions', '00000000-0000-0000-0000-000000000002')
+// Note: Cosmos DB uses its own SQL RBAC system, not ARM role definitions
 
 // OpenAI - Cognitive Services OpenAI User
 resource openAiRoleAssignment 'Microsoft.Authorization/roleAssignments@2022-04-01' = {

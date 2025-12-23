@@ -1,7 +1,6 @@
 // security.bicep - Resource-level security configurations
 
 param storageAccountName string
-param logAnalyticsWorkspaceId string
 
 // Reference the storage account
 resource storageAccount 'Microsoft.Storage/storageAccounts@2023-05-01' existing = {

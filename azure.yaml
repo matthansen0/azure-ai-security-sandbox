@@ -1,0 +1,35 @@
+# Azure Developer CLI (azd) configuration
+# Run 'azd up' to provision infrastructure and deploy the application
+
+name: azure-ai-security-sandbox
+metadata:
+  template: azure-ai-security-sandbox@0.1.0
+
+# Infrastructure configuration
+infra:
+  provider: bicep
+  path: infra
+  module: main
+
+# Service definitions
+services:
+  backend:
+    project: src/backend
+    language: python
+    host: appservice
+
+# Hooks for custom deployment logic
+hooks:
+  # Post-provision: Configure App Service to only accept Front Door traffic
+  postprovision:
+    shell: sh
+    run: |
+      echo "Configuring Front Door access restrictions..."
+      az webapp config access-restriction add \
+        --resource-group $RESOURCE_GROUP_NAME \
+        --name $APP_SERVICE_NAME \
+        --rule-name "AllowFrontDoor" \
+        --action Allow \
+        --service-tag AzureFrontDoor.Backend \
+        --priority 100 \
+        --output none 2>/dev/null || echo "Access restriction already configured"

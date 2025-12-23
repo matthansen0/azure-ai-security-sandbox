@@ -131,7 +131,6 @@ module frontDoor 'modules/front-door.bicep' = {
     frontDoorEndpointName: 'ep-${resourceToken}'
     wafPolicyName: 'waf${resourceToken}'
     originHostName: appService.outputs.defaultHostName
-    appServiceResourceId: appService.outputs.appServiceId
   }
 }
 
@@ -141,7 +140,6 @@ module security 'modules/security.bicep' = {
   scope: rg
   params: {
     storageAccountName: storage.outputs.storageAccountName
-    logAnalyticsWorkspaceId: monitoring.outputs.logAnalyticsWorkspaceId
   }
 }
 
