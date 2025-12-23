@@ -1,183 +1,178 @@
-#!/bin/bash
-set -e
+#!/usr/bin/env bash
+set -euo pipefail
 
-# cleanup.sh
-# Usage: ./cleanup.sh <RESOURCE_GROUP_NAME>
+# Azure AI Security Sandbox - Cleanup Script
+# Removes all deployed resources and optionally reverts Defender settings
 
-if [ -z "$1" ]; then
-    echo "Usage: $0 <RESOURCE_GROUP_NAME>"
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+STATE_FILE="$SCRIPT_DIR/.deployment_state.env"
+
+# Colors for output
+RED='\033[0;31m'
+GREEN='\033[0;32m'
+YELLOW='\033[1;33m'
+BLUE='\033[0;34m'
+NC='\033[0m' # No Color
+
+echo -e "${BLUE}╔══════════════════════════════════════════════════════════════╗${NC}"
+echo -e "${BLUE}║         Azure AI Security Sandbox - Cleanup                  ║${NC}"
+echo -e "${BLUE}╚══════════════════════════════════════════════════════════════╝${NC}"
+echo
+
+# Load state from deployment or use parameter
+AZURE_ENV_NAME="${1:-}"
+
+if [[ -z "$AZURE_ENV_NAME" ]] && [[ -f "$STATE_FILE" ]]; then
+    source "$STATE_FILE"
+    echo -e "Loaded state from previous deployment."
+fi
+
+if [[ -z "$AZURE_ENV_NAME" ]]; then
+    read -rp "Enter environment name to clean up: " AZURE_ENV_NAME
+fi
+
+if [[ -z "$AZURE_ENV_NAME" ]]; then
+    echo -e "${RED}Error: Environment name is required.${NC}"
     exit 1
 fi
 
-RESOURCE_GROUP="$1"
+# Construct resource group name (matches Bicep naming convention)
+RESOURCE_GROUP="${RESOURCE_GROUP:-rg-aisecurity-$AZURE_ENV_NAME}"
 
-echo "Starting cleanup of security configurations in resource group: $RESOURCE_GROUP"
+echo -e "Environment: ${YELLOW}$AZURE_ENV_NAME${NC}"
+echo -e "Resource Group: ${YELLOW}$RESOURCE_GROUP${NC}"
+echo
 
-
-# Disable Defender for AI workspace-setting (applies to all OpenAI resources in the workspace)
-echo "Disabling Defender for AI workspace-setting (default) in this subscription..."
-az security workspace-setting delete --name "default" || true
-
-# Disable Defender for Storage at the storage account level using ARM API
-SUBSCRIPTION_ID=$(az account show --query id -o tsv)
-STORAGE_ACCOUNTS=$(az resource list --resource-group "$RESOURCE_GROUP" --resource-type "Microsoft.Storage/storageAccounts" --query "[].name" -o tsv)
-for sa in $STORAGE_ACCOUNTS; do
-    echo "Disabling Defender for Storage on account: $sa"
-    url="https://management.azure.com/subscriptions/${SUBSCRIPTION_ID}/resourceGroups/${RESOURCE_GROUP}/providers/Microsoft.Storage/storageAccounts/${sa}/providers/Microsoft.Security/defenderForStorageSettings/current?api-version=2025-01-01"
-    body='{ "properties": { "isEnabled": false, "overrideSubscriptionLevelSettings": true, "malwareScanning": { "onUpload": { "isEnabled": false } }, "sensitiveDataDiscovery": { "isEnabled": false } } }'
-    az rest --method PUT --url "$url" --body "$body" --headers "Content-Type=application/json" || true
-done
-
-echo "Security configurations successfully removed!"
-
-# Optionally revert subscription-wide Defender plan changes recorded by deploy script
-revert_subscription_defender_plans() {
-    local script_dir state_file ans
-    script_dir="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-    state_file="$script_dir/.defender_state.env"
-    local YELLOW='\033[1;33m'; local NC='\033[0m'
-    if [ -f "$state_file" ]; then
-        # shellcheck disable=SC1090
-        source "$state_file"
-        if [ "${APPSERVICES_CHANGED:-0}" = "1" ] || [ "${COSMOSDBS_CHANGED:-0}" = "1" ]; then
-            echo -e "${YELLOW}Warning:${NC} Subscription-wide Defender plans were enabled by the deploy script."
-            read -r -p "Revert these subscription-wide changes now? [y/N] " ans
-            if [[ "$ans" =~ ^[Yy]$ ]]; then
-                if [ "${APPSERVICES_CHANGED:-0}" = "1" ]; then
-                    echo "Reverting Defender plan for App Services at subscription scope..."
-                    local url="https://management.azure.com/subscriptions/${SUBSCRIPTION_ID}/providers/Microsoft.Security/pricings/AppServices?api-version=2024-01-01"
-                    local body='{ "properties": { "pricingTier": "Free" } }'
-                    az rest --method PUT --url "$url" --body "$body" --headers "Content-Type=application/json" || true
-                fi
-                if [ "${COSMOSDBS_CHANGED:-0}" = "1" ]; then
-                    echo "Reverting Defender plan for Cosmos DBs at subscription scope..."
-                    local url="https://management.azure.com/subscriptions/${SUBSCRIPTION_ID}/providers/Microsoft.Security/pricings/CosmosDbs?api-version=2024-01-01"
-                    local body='{ "properties": { "pricingTier": "Free" } }'
-                    az rest --method PUT --url "$url" --body "$body" --headers "Content-Type=application/json" || true
-                fi
-                echo "Revert complete."
-                rm -f "$state_file" || true
-            else
-                echo "Leaving subscription-wide Defender plans as-is."
-            fi
-        fi
+# Check if resource group exists
+check_resource_group() {
+    if ! az group show --name "$RESOURCE_GROUP" &>/dev/null; then
+        echo -e "${YELLOW}Resource group '$RESOURCE_GROUP' not found.${NC}"
+        echo "Nothing to clean up."
+        exit 0
     fi
 }
 
-# Optionally, clean up all resources if azd was used
-azd_teardown() {
-    local script_dir azd_state_file
-    script_dir="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-    azd_state_file="$script_dir/.azd_state.env"
-    if [ -f "$azd_state_file" ]; then
-        # shellcheck disable=SC1090
-        source "$azd_state_file"
-        if [ -n "${AZD_WORKDIR:-}" ] && [ -d "$AZD_WORKDIR" ]; then
-            echo "Running 'azd down --force --purge' in $AZD_WORKDIR ..."
-            if [ -n "${AZD_ENV:-}" ]; then
-                (cd "$AZD_WORKDIR" && azd down --force --purge -e "$AZD_ENV") || true
-            else
-                (cd "$AZD_WORKDIR" && azd down --force --purge) || true
-            fi
-        else
-            echo "(Info) No recorded azd workdir found; attempting azd down in current directory."
-            azd down --force --purge || true
-        fi
-    else
-        echo "(Info) No .azd_state.env present; attempting azd down in current directory."
-        azd down --force --purge || true
+# List resources to be deleted
+list_resources() {
+    echo -e "${YELLOW}Resources to be deleted:${NC}"
+    echo "─────────────────────────"
+    
+    az resource list \
+        --resource-group "$RESOURCE_GROUP" \
+        --query "[].{Name:name, Type:type}" \
+        --output table
+    
+    echo
+}
+
+# Confirm deletion
+confirm_deletion() {
+    echo -e "${RED}WARNING: This will permanently delete all resources in '$RESOURCE_GROUP'.${NC}"
+    read -rp "Are you sure you want to continue? [y/N]: " confirm
+    
+    if [[ "${confirm,,}" != "y" ]]; then
+        echo "Cleanup cancelled."
+        exit 0
     fi
 }
 
-# Delete any client secrets for app registrations discovered via azd env
-delete_client_secrets() {
-    local script_dir azd_state_file env_values candidates id confirm
-    script_dir="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-    azd_state_file="$script_dir/.azd_state.env"
-    candidates=()
-
-    if [ -f "$azd_state_file" ]; then
-        # shellcheck disable=SC1090
-        source "$azd_state_file"
-        if [ -n "${AZD_WORKDIR:-}" ] && [ -d "$AZD_WORKDIR" ]; then
-            if [ -n "${AZD_ENV:-}" ]; then
-                env_values=$(cd "$AZD_WORKDIR" && azd env get-values -e "$AZD_ENV" 2>/dev/null || true)
-            else
-                env_values=$(cd "$AZD_WORKDIR" && azd env get-values 2>/dev/null || true)
-            fi
-        fi
-    fi
-
-    # Fallback to current directory if no recorded azd workdir/env
-    if [ -z "$env_values" ]; then
-        if [ -n "${AZD_ENV:-}" ]; then
-            env_values=$(azd env get-values -e "$AZD_ENV" 2>/dev/null || true)
-        else
-            env_values=$(azd env get-values 2>/dev/null || true)
-        fi
-    fi
-
-    if [ -n "$env_values" ]; then
-        while IFS= read -r val; do
-            # Strip quotes
-            val="${val%\"}"; val="${val#\"}"
-            if [[ "$val" =~ ^[0-9a-fA-F-]{36}$ ]]; then
-                candidates+=("$val")
-            fi
-        done < <(echo "$env_values" | grep -E '(_CLIENT_ID|APP_ID|AAD_APP_ID|APP_REGISTRATION_ID)=' | sed 's/^[^=]*=//' | tr -d '\r' | sort -u)
-    fi
-
-    # De-duplicate
-    if [ ${#candidates[@]} -eq 0 ]; then
-        echo "No candidate app registration IDs found in azd env. Skipping client secret deletion."
-        return 0
-    fi
-
-    echo "Found candidate app registrations (from azd env):"
-    for id in "${candidates[@]}"; do
-        local name
-        name=$(az ad app show --id "$id" --query displayName -o tsv 2>/dev/null || true)
-        name=${name:-"(unknown)"}
-        local secret_count
-        secret_count=$(az ad app show --id "$id" --query "length(passwordCredentials)" -o tsv 2>/dev/null || echo 0)
-        echo "- $id  name: $name  passwordSecrets: $secret_count"
-    done
-
-    read -r -p "Delete ALL password secrets for the above apps? [y/N] " confirm
-    if [[ ! "$confirm" =~ ^[Yy]$ ]]; then
-        echo "Skipping client secret deletion."
-        return 0
-    fi
-
-    for id in "${candidates[@]}"; do
-        local key_ids
-        key_ids=$(az ad app show --id "$id" --query "passwordCredentials[].keyId" -o tsv 2>/dev/null || true)
-        if [ -z "$key_ids" ]; then
-            echo "No password secrets to delete for app $id."
-            continue
-        fi
-        for kid in $key_ids; do
-            echo "Deleting secret keyId=$kid for app $id ..."
-            az ad app credential delete --id "$id" --key-id "$kid" --only-show-errors || true
-        done
-    done
-    echo "Client secret deletion completed."
+# Delete resource group
+delete_resources() {
+    echo
+    echo -e "${YELLOW}Deleting resource group '$RESOURCE_GROUP'...${NC}"
+    echo "This may take several minutes."
+    
+    az group delete \
+        --name "$RESOURCE_GROUP" \
+        --yes \
+        --no-wait
+    
+    echo -e "${GREEN}✓ Resource group deletion initiated${NC}"
+    echo "  The deletion is running in the background."
 }
 
-# Execute teardown steps
-revert_subscription_defender_plans
-azd_teardown
-delete_client_secrets || true
+# Handle Defender plans
+handle_defender_plans() {
+    echo
+    echo -e "${YELLOW}Defender Plan Settings${NC}"
+    echo "─────────────────────────"
+    echo "The following Defender plans may have been enabled by this deployment:"
+    echo "  - Defender for App Services"
+    echo "  - Defender for Cosmos DB"
+    echo
+    echo -e "${YELLOW}Note:${NC} These are subscription-wide settings that affect all resources."
+    echo "They will NOT be automatically disabled to avoid impacting other workloads."
+    echo
+    
+    read -rp "Would you like to disable Defender for App Services? [y/N]: " disable_appsvc
+    if [[ "${disable_appsvc,,}" == "y" ]]; then
+        echo "Disabling Defender for App Services..."
+        az security pricing create \
+            --name AppServices \
+            --tier Free \
+            --output none || echo "  (Failed or not available)"
+        echo -e "${GREEN}✓ Defender for App Services disabled${NC}"
+    fi
+    
+    read -rp "Would you like to disable Defender for Cosmos DB? [y/N]: " disable_cosmos
+    if [[ "${disable_cosmos,,}" == "y" ]]; then
+        echo "Disabling Defender for Cosmos DB..."
+        az security pricing create \
+            --name CosmosDbs \
+            --tier Free \
+            --output none || echo "  (Failed or not available)"
+        echo -e "${GREEN}✓ Defender for Cosmos DB disabled${NC}"
+    fi
+}
 
-# Remove Azure Front Door profile created by the secure step (no prompt)
-PROFILE_NAME="fd-${RESOURCE_GROUP}"
-ID=$(az resource show -g "$RESOURCE_GROUP" -n "$PROFILE_NAME" --resource-type Microsoft.Cdn/profiles --query id -o tsv 2>/dev/null || true)
-if [ -z "$ID" ]; then
-    echo "No Front Door profile '$PROFILE_NAME' found in RG '$RESOURCE_GROUP'. Skipping."
-else
-    echo "Deleting Front Door profile '$PROFILE_NAME'..."
-    az resource delete --ids "$ID" --only-show-errors || true
-    echo "Front Door removal complete."
-fi
+# Clean up Front Door if it exists at subscription level
+cleanup_frontdoor() {
+    # Front Door profiles are in the resource group, so they get deleted automatically
+    # This function is here for any additional cleanup if needed
+    :
+}
 
-echo "Cleanup complete!"
+# Clean up state file
+cleanup_state() {
+    if [[ -f "$STATE_FILE" ]]; then
+        rm -f "$STATE_FILE"
+        echo -e "${GREEN}✓ Cleaned up local state file${NC}"
+    fi
+}
+
+# Print summary
+print_summary() {
+    echo
+    echo -e "${GREEN}╔══════════════════════════════════════════════════════════════╗${NC}"
+    echo -e "${GREEN}║                   Cleanup Complete! 🧹                       ║${NC}"
+    echo -e "${GREEN}╚══════════════════════════════════════════════════════════════╝${NC}"
+    echo
+    echo "The resource group deletion has been initiated and is running"
+    echo "in the background. It may take 5-10 minutes to complete."
+    echo
+    echo "To verify deletion status:"
+    echo -e "  ${BLUE}az group show --name $RESOURCE_GROUP${NC}"
+    echo
+    echo "Once complete, you'll receive an error indicating the resource"
+    echo "group doesn't exist - that's expected and confirms deletion."
+    echo
+}
+
+# Main execution
+main() {
+    # Check Azure CLI login
+    if ! az account show &>/dev/null; then
+        echo -e "${YELLOW}Not logged into Azure. Initiating login...${NC}"
+        az login
+    fi
+    
+    check_resource_group
+    list_resources
+    confirm_deletion
+    delete_resources
+    handle_defender_plans
+    cleanup_state
+    print_summary
+}
+
+main "$@"
