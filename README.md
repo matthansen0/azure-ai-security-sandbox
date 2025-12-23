@@ -64,10 +64,44 @@ A self-contained Azure AI security demonstration platform featuring a RAG (Retri
 ### Prerequisites
 
 - Azure subscription with Owner or Contributor access
+- [Azure Developer CLI (azd)](https://learn.microsoft.com/azure/developer/azure-developer-cli/install-azd) installed
 - Azure CLI installed and authenticated
 - (Optional) GitHub Codespaces or VS Code with Dev Containers
 
-### Deploy
+### Deploy with Azure Developer CLI (Recommended)
+
+The easiest way to deploy is with `azd`:
+
+```bash
+# Clone the repository
+git clone https://github.com/matthansen0/azure-ai-security-sandbox.git
+cd azure-ai-security-sandbox
+
+# Login to Azure
+azd auth login
+
+# Deploy everything with one command
+azd up
+```
+
+That's it! `azd up` will:
+1. Prompt you for an environment name and Azure region
+2. Provision all infrastructure via Bicep
+3. Deploy the Python application to App Service
+4. Configure Front Door access restrictions
+5. Output the application URL
+
+#### Other azd Commands
+
+```bash
+azd provision          # Just provision infrastructure
+azd deploy             # Just deploy application code
+azd down               # Tear down all resources
+azd env list           # List environments
+azd monitor            # Open Azure Portal monitoring
+```
+
+### Deploy with Bash Script (Alternative)
 
 ```bash
 # Clone the repository
@@ -127,7 +161,8 @@ azure-ai-security-sandbox/
 │       └── Dockerfile
 ├── docs/                       # Documentation
 │   └── security-walkthrough.md
-├── deploy.sh                   # One-click deployment script
+├── azure.yaml                  # Azure Developer CLI configuration
+├── deploy.sh                   # Bash deployment script
 ├── cleanup.sh                  # Resource cleanup script
 └── README.md
 ```
@@ -156,11 +191,17 @@ azure-ai-security-sandbox/
 
 ## 🧹 Cleanup
 
+### With azd (Recommended)
+```bash
+azd down
+```
+
+### With Bash Script
 ```bash
 ./cleanup.sh
 ```
 
-This removes all deployed resources and optionally reverts any subscription-wide Defender plan changes.
+Both methods remove all deployed resources and optionally revert any subscription-wide Defender plan changes.
 
 ## 📖 Additional Resources
 
