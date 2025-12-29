@@ -19,6 +19,7 @@ resource openAiAccount 'Microsoft.CognitiveServices/accounts@2024-04-01-preview'
   properties: {
     customSubDomainName: openAiAccountName
     publicNetworkAccess: 'Enabled' // Public endpoints for demo
+    restore: true // Restore soft-deleted resource if exists
     networkAcls: {
       defaultAction: 'Allow'
     }
