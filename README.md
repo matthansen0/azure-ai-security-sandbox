@@ -173,7 +173,7 @@ az login
 
 ### Access the Application
 
-After deployment completes, access your app via the Front Door URL:
+After deployment completes, use the Front Door URL (also shown as `APP_PUBLIC_URL` in `azd up` outputs). Direct App Service URLs may be blocked by access restrictions.
 
 ```
 https://<your-frontdoor-endpoint>.azurefd.net

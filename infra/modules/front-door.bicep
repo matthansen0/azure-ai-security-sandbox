@@ -146,6 +146,7 @@ resource securityPolicy 'Microsoft.Cdn/profiles/securityPolicies@2024-02-01' = {
 
 output frontDoorProfileId string = frontDoorProfile.id
 output frontDoorProfileName string = frontDoorProfile.name
+output frontDoorEndpointName string = frontDoorEndpoint.name
 output frontDoorEndpointId string = frontDoorEndpoint.id
 output frontDoorEndpointHostName string = frontDoorEndpoint.properties.hostName
 output wafPolicyId string = wafPolicy.id

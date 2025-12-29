@@ -168,11 +168,15 @@ output AZURE_LOCATION string = location
 
 // App Service outputs
 output APP_SERVICE_NAME string = appService.outputs.appServiceName
-output APP_SERVICE_URL string = 'https://${appService.outputs.defaultHostName}'
+output APP_INTERNAL_URL string = 'https://${appService.outputs.defaultHostName}'
+// Primary public URL (Front Door)
+output APP_PUBLIC_URL string = 'https://${frontDoor.outputs.frontDoorEndpointHostName}'
 
 // Front Door outputs
 output FRONTDOOR_ENDPOINT string = frontDoor.outputs.frontDoorEndpointHostName
 output FRONTDOOR_URL string = 'https://${frontDoor.outputs.frontDoorEndpointHostName}'
+output FRONTDOOR_PROFILE_NAME string = frontDoor.outputs.frontDoorProfileName
+output FRONTDOOR_ENDPOINT_NAME string = frontDoor.outputs.frontDoorEndpointName
 
 // AI Services outputs
 output AZURE_OPENAI_ENDPOINT string = aiServices.outputs.openAiEndpoint

@@ -33,3 +33,25 @@ hooks:
         --service-tag AzureFrontDoor.Backend \
         --priority 100 \
         --output none 2>/dev/null || echo "Access restriction already configured"
+
+      echo "Ensuring Front Door endpoint and route are enabled..."
+      az afd endpoint update \
+        --resource-group $RESOURCE_GROUP_NAME \
+        --profile-name $FRONTDOOR_PROFILE_NAME \
+        --name $FRONTDOOR_ENDPOINT_NAME \
+        --enabled-state Enabled \
+        --output none
+
+      az afd route update \
+        --resource-group $RESOURCE_GROUP_NAME \
+        --profile-name $FRONTDOOR_PROFILE_NAME \
+        --endpoint-name $FRONTDOOR_ENDPOINT_NAME \
+        --name default-route \
+        --origin-group appservice-origin-group \
+        --origin-path / \
+        --patterns-to-match "/*" \
+        --forwarding-protocol HttpsOnly \
+        --https-redirect Enabled \
+        --supported-protocols Http Https \
+        --enabled-state Enabled \
+        --output none
