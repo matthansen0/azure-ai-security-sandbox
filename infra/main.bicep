@@ -23,10 +23,6 @@ param enableDefenderForAppServices bool = true
 @description('Enable Defender for Cosmos DB at subscription level')
 param enableDefenderForCosmosDb bool = true
 
-@description('App Service Plan SKU (B1=Basic, S1=Standard, P1v3=Premium)')
-@allowed(['B1', 'B2', 'B3', 'S1', 'S2', 'S3', 'P1v2', 'P2v2', 'P3v2', 'P0v3', 'P1v3', 'P2v3', 'P3v3'])
-param appServicePlanSku string = 'B2'
-
 @description('Set to true to restore a soft-deleted OpenAI resource with the same name')
 param restoreSoftDeletedOpenAi bool = false
 
@@ -92,37 +88,41 @@ module aiServices 'modules/ai-services.bicep' = {
   }
 }
 
-// App Service
-module appService 'modules/app-service.bicep' = {
-  name: 'appService'
+// Container Apps - Main RAG application
+module containerApps 'modules/container-apps.bicep' = {
+  name: 'containerApps'
   scope: rg
   params: {
     location: location
     tags: tags
-    appServicePlanName: '${abbrs.webServerFarms}${resourceToken}'
-    appServiceName: '${abbrs.webSitesAppService}${resourceToken}'
+    containerAppsEnvName: '${abbrs.appManagedEnvironments}${resourceToken}'
+    containerAppName: '${abbrs.appContainerApps}${resourceToken}'
+    resourceGroupName: rg.name
+    azureSubscriptionId: subscription().subscriptionId
     applicationInsightsConnectionString: monitoring.outputs.applicationInsightsConnectionString
-    // App settings for connecting to other services
+    logAnalyticsWorkspaceId: monitoring.outputs.logAnalyticsWorkspaceId
     openAiEndpoint: aiServices.outputs.openAiEndpoint
     openAiDeploymentName: aiServices.outputs.chatDeploymentName
     openAiEmbeddingDeploymentName: aiServices.outputs.embeddingDeploymentName
+    openAiAccountName: aiServices.outputs.openAiAccountName
     searchEndpoint: aiServices.outputs.searchEndpoint
+    searchServiceName: aiServices.outputs.searchServiceName
     searchIndexName: 'documents'
     storageAccountName: storage.outputs.storageAccountName
     storageBlobEndpoint: storage.outputs.blobEndpoint
     cosmosDbEndpoint: cosmosDb.outputs.cosmosDbEndpoint
     cosmosDbDatabaseName: cosmosDb.outputs.databaseName
     cosmosDbContainerName: cosmosDb.outputs.containerName
-    appServicePlanSku: appServicePlanSku
   }
 }
 
-// Role assignments for managed identity
-module roleAssignments 'modules/role-assignments.bicep' = {
-  name: 'roleAssignments'
+// Azure Functions for document processing
+// Role assignments for Container App managed identity
+module containerAppRoleAssignments 'modules/role-assignments.bicep' = {
+  name: 'containerAppRoleAssignments'
   scope: rg
   params: {
-    principalId: appService.outputs.identityPrincipalId
+    principalId: containerApps.outputs.identityPrincipalId
     openAiAccountName: aiServices.outputs.openAiAccountName
     searchServiceName: aiServices.outputs.searchServiceName
     storageAccountName: storage.outputs.storageAccountName
@@ -139,7 +139,7 @@ module frontDoor 'modules/front-door.bicep' = {
     frontDoorProfileName: '${abbrs.cdnProfiles}${resourceToken}'
     frontDoorEndpointName: 'ep-${resourceToken}'
     wafPolicyName: 'waf${resourceToken}'
-    originHostName: appService.outputs.defaultHostName
+    originHostName: containerApps.outputs.containerAppFqdn
   }
 }
 
@@ -166,9 +166,11 @@ module subscriptionSecurity 'modules/subscription-security.bicep' = {
 output RESOURCE_GROUP_NAME string = rg.name
 output AZURE_LOCATION string = location
 
-// App Service outputs
-output APP_SERVICE_NAME string = appService.outputs.appServiceName
-output APP_INTERNAL_URL string = 'https://${appService.outputs.defaultHostName}'
+// Container Apps outputs
+output CONTAINER_APP_NAME string = containerApps.outputs.containerAppName
+output CONTAINER_APP_FQDN string = containerApps.outputs.containerAppFqdn
+output APP_INTERNAL_URL string = 'https://${containerApps.outputs.containerAppFqdn}'
+
 // Primary public URL (Front Door)
 output APP_PUBLIC_URL string = 'https://${frontDoor.outputs.frontDoorEndpointHostName}'
 

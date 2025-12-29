@@ -11,47 +11,34 @@ infra:
   path: infra
   module: main
 
-# Service definitions
-services:
-  backend:
-    project: src/backend
-    language: python
-    host: appservice
+# No services section needed - Container Apps pulls image directly from MCR
+# Functions are deployed via Bicep (consumption plan, code deployed separately if needed)
 
 # Hooks for custom deployment logic
 hooks:
-  # Post-provision: Configure App Service to only accept Front Door traffic
+  # Post-provision: Configure Front Door routes
   postprovision:
     shell: sh
     run: |
-      echo "Configuring Front Door access restrictions..."
-      az webapp config access-restriction add \
-        --resource-group $RESOURCE_GROUP_NAME \
-        --name $APP_SERVICE_NAME \
-        --rule-name "AllowFrontDoor" \
-        --action Allow \
-        --service-tag AzureFrontDoor.Backend \
-        --priority 100 \
-        --output none 2>/dev/null || echo "Access restriction already configured"
-
       echo "Ensuring Front Door endpoint and route are enabled..."
       az afd endpoint update \
         --resource-group $RESOURCE_GROUP_NAME \
         --profile-name $FRONTDOOR_PROFILE_NAME \
         --name $FRONTDOOR_ENDPOINT_NAME \
         --enabled-state Enabled \
-        --output none
+        --output none 2>/dev/null || true
 
       az afd route update \
         --resource-group $RESOURCE_GROUP_NAME \
         --profile-name $FRONTDOOR_PROFILE_NAME \
         --endpoint-name $FRONTDOOR_ENDPOINT_NAME \
         --name default-route \
-        --origin-group appservice-origin-group \
+        --origin-group containerapp-origin-group \
         --origin-path / \
         --patterns-to-match "/*" \
         --forwarding-protocol HttpsOnly \
         --https-redirect Enabled \
         --supported-protocols Http Https \
         --enabled-state Enabled \
-        --output none
+        --output none 2>/dev/null || true
+

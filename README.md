@@ -5,7 +5,7 @@
 
 ## ✨ Overview
 
-A self-contained Azure AI security demonstration platform featuring a RAG (Retrieval-Augmented Generation) chat application with enterprise-grade security controls. This project deploys everything from scratch using Bicep—no external dependencies.
+A self-contained Azure AI security demonstration platform featuring a RAG (Retrieval-Augmented Generation) chat application with enterprise-grade security controls. This project deploys everything from scratch using Bicep and pulls the official [azure-search-openai-demo](https://github.com/Azure-Samples/azure-search-openai-demo) container image from Microsoft Container Registry.
 
 > [!WARNING]  
 > This repo is under active development for v1.0 release.
@@ -27,9 +27,10 @@ A self-contained Azure AI security demonstration platform featuring a RAG (Retri
                                   │
                                   ▼
 ┌─────────────────────────────────────────────────────────────────────┐
-│                      Azure App Service (Python)                      │
-│                      • Managed Identity                              │
-│                      • Defender for App Service                      │
+│                    Azure Container Apps                              │
+│                    • RAG Chat Application (MCR image)               │
+│                    • Managed Identity                                │
+│                    • Auto-scaling                                    │
 └───────────┬─────────────────────┼─────────────────────┬─────────────┘
             │                     │                     │
             ▼                     ▼                     ▼
@@ -39,13 +40,18 @@ A self-contained Azure AI security demonstration platform featuring a RAG (Retri
 │   • Embeddings    │  │  • Semantic       │  │    • Defender         │
 │   • Defender AI   │  │    Ranking        │  │    • Malware Scan     │
 └───────────────────┘  └───────────────────┘  └───────────────────────┘
-                                                        │
-                                                        ▼
-                                              ┌───────────────────────┐
-                                              │    Azure Cosmos DB    │
-                                              │    • Chat History     │
-                                              │    • Defender         │
-                                              └───────────────────────┘
+            │                                           │
+            │                                           ▼
+            │                                 ┌───────────────────────┐
+            │                                 │    Azure Cosmos DB    │
+            │                                 │    • Chat History     │
+            │                                 │    • Defender         │
+            │                                 └───────────────────────┘
+            │
+            ▼
+┌───────────────────────────────────────────────────────────────────────┐
+│              Ingestion Pipeline (future: Container Apps Job)          │
+└───────────────────────────────────────────────────────────────────────┘
 ```
 
 ## 🔐 Security Features
@@ -55,7 +61,7 @@ A self-contained Azure AI security demonstration platform featuring a RAG (Retri
 | **Front Door + WAF** | Edge Security | OWASP managed rules, bot protection, DDoS mitigation, rate limiting |
 | **Defender for AI** | AI Threat Detection | Prompt injection detection, jailbreak attempts, data exfiltration monitoring |
 | **Defender for Storage** | Data Protection | Malware scanning on upload, sensitive data discovery (PII/PCI/PHI) |
-| **Defender for App Service** | Runtime Protection | Suspicious process detection, exploitation attempts, brute-force prevention |
+| **Container Apps** | Serverless Containers | Auto-scaling, managed environment, no infrastructure to manage |
 | **Defender for Cosmos DB** | Database Security | SQL injection detection, anomalous access patterns, data exfiltration alerts |
 | **Managed Identities** | Zero Secrets | No keys in code—all services authenticate via Azure AD |
 
@@ -87,15 +93,14 @@ azd up
 That's it! `azd up` will:
 1. Prompt you for an environment name and Azure region
 2. Provision all infrastructure via Bicep
-3. Deploy the Python application to App Service
-4. Configure Front Door access restrictions
+3. Deploy Container Apps (pulls RAG app image from MCR)
+4. Configure Front Door routing
 5. Output the application URL
 
 #### Other azd Commands
 
 ```bash
-azd provision          # Just provision infrastructure
-azd deploy             # Just deploy application code
+azd provision          # Just provision infrastructure (no code deploy needed)
 azd down               # Tear down all resources
 azd env list           # List environments
 azd monitor            # Open Azure Portal monitoring
@@ -106,9 +111,6 @@ azd monitor            # Open Azure Portal monitoring
 You can customize the deployment with optional parameters:
 
 ```bash
-# Use a specific App Service SKU (default: B2)
-azd up --parameter appServicePlanSku=S1
-
 # Deploy to a specific region
 azd up --location canadacentral
 ```
@@ -167,13 +169,13 @@ az login
 4. **Azure AI Search** for document indexing
 5. **Azure Storage** for document blobs
 6. **Azure Cosmos DB** for chat history
-7. **Azure App Service** running the Python RAG app
+7. **Azure Container Apps** running the RAG application (image from MCR)
 8. **Azure Front Door + WAF** for edge protection
 9. **Microsoft Defender** plans for all applicable resources
 
 ### Access the Application
 
-After deployment completes, use the Front Door URL (also shown as `APP_PUBLIC_URL` in `azd up` outputs). Direct App Service URLs may be blocked by access restrictions.
+After deployment completes, use the Front Door URL (also shown as `APP_PUBLIC_URL` in `azd up` outputs).
 
 ```
 https://<your-frontdoor-endpoint>.azurefd.net
@@ -187,24 +189,21 @@ azure-ai-security-sandbox/
 │   ├── main.bicep             # Main orchestration
 │   ├── main.parameters.json   # Default parameters
 │   └── modules/               # Modular Bicep files
-│       ├── ai-services.bicep
-│       ├── app-service.bicep
-│       ├── cosmos-db.bicep
-│       ├── front-door.bicep
-│       ├── monitoring.bicep
-│       ├── security.bicep
-│       └── storage.bicep
-├── src/                        # Application source code
-│   └── backend/               # Python FastAPI application
-│       ├── app/
-│       │   ├── main.py
-│       │   ├── chat.py
-│       │   ├── search.py
-│       │   └── ...
-│       ├── requirements.txt
-│       └── Dockerfile
+│       ├── ai-services.bicep  # Azure OpenAI + AI Search
+│       ├── container-apps.bicep # Container Apps environment + app
+│       ├── cosmos-db.bicep    # Cosmos DB for chat history
+│       ├── front-door.bicep   # Front Door + WAF
+│       ├── functions.bicep    # Azure Functions for doc processing
+│       ├── monitoring.bicep   # Log Analytics + App Insights
+│       ├── role-assignments.bicep # RBAC for managed identities
+│       ├── security.bicep     # Defender configurations
+│       ├── storage.bicep      # Storage account
+│       └── subscription-security.bicep # Subscription-level Defender
+├── src/                        # (Optional) Local development
+│   └── backend/               # Minimal backend for testing
+│       ├── main.py
+│       └── requirements.txt
 ├── docs/                       # Documentation
-│   └── security-walkthrough.md
 ├── azure.yaml                  # Azure Developer CLI configuration
 ├── deploy.sh                   # Bash deployment script
 ├── cleanup.sh                  # Resource cleanup script
@@ -214,12 +213,13 @@ azure-ai-security-sandbox/
 ## 📝 Roadmap
 
 ### v1.0 (Current Focus)
-- [x] Self-contained RAG application (no upstream dependencies)
+- [x] Container Apps deployment (pulls azure-search-openai-demo from MCR)
 - [x] Bicep-based infrastructure
 - [x] Front Door + WAF
-- [x] Defender for AI, Storage, App Service, Cosmos DB
-- [ ] Complete Python RAG application
-- [ ] Document upload and indexing
+- [x] Defender for AI, Storage, Cosmos DB
+- [x] Azure OpenAI + AI Search integration
+- [ ] Ingestion pipeline (Container Apps Job)
+- [ ] Document upload and indexing pipeline
 - [ ] Chat with history
 
 ### v1.1 (Planned)

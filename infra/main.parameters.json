@@ -16,6 +16,9 @@
     },
     "enableDefenderForCosmosDb": {
       "value": true
+    },
+    "restoreSoftDeletedOpenAi": {
+      "value": "${restoreSoftDeletedOpenAi=false}"
     }
   }
 }

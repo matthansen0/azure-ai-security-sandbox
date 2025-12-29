@@ -64,7 +64,7 @@ resource frontDoorEndpoint 'Microsoft.Cdn/profiles/afdEndpoints@2024-02-01' = {
 // Origin Group
 resource originGroup 'Microsoft.Cdn/profiles/originGroups@2024-02-01' = {
   parent: frontDoorProfile
-  name: 'appservice-origin-group'
+  name: 'containerapp-origin-group'
   properties: {
     loadBalancingSettings: {
       sampleSize: 4
@@ -81,10 +81,10 @@ resource originGroup 'Microsoft.Cdn/profiles/originGroups@2024-02-01' = {
   }
 }
 
-// Origin (App Service)
+// Origin (Container App)
 resource origin 'Microsoft.Cdn/profiles/originGroups/origins@2024-02-01' = {
   parent: originGroup
-  name: 'appservice-origin'
+  name: 'containerapp-origin'
   properties: {
     hostName: originHostName
     originHostHeader: originHostName
