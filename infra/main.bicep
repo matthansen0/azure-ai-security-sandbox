@@ -25,7 +25,10 @@ param enableDefenderForCosmosDb bool = true
 
 @description('App Service Plan SKU (B1=Basic, S1=Standard, P1v3=Premium)')
 @allowed(['B1', 'B2', 'B3', 'S1', 'S2', 'S3', 'P1v2', 'P2v2', 'P3v2', 'P0v3', 'P1v3', 'P2v3', 'P3v3'])
-param appServicePlanSku string = 'P0v3'
+param appServicePlanSku string = 'B2'
+
+@description('Set to true to restore a soft-deleted OpenAI resource with the same name')
+param restoreSoftDeletedOpenAi bool = false
 
 // Generate unique suffix for globally unique resource names
 var resourceToken = toLower(uniqueString(subscription().id, environmentName, location))
@@ -85,6 +88,7 @@ module aiServices 'modules/ai-services.bicep' = {
     openAiAccountName: '${abbrs.cognitiveServicesAccounts}${resourceToken}'
     searchServiceName: '${abbrs.searchSearchServices}${resourceToken}'
     logAnalyticsWorkspaceId: monitoring.outputs.logAnalyticsWorkspaceId
+    restoreSoftDeletedOpenAi: restoreSoftDeletedOpenAi
   }
 }
 
@@ -150,7 +154,7 @@ module security 'modules/security.bicep' = {
 
 // Subscription-level Defender plans (optional)
 module subscriptionSecurity 'modules/subscription-security.bicep' = {
-  name: 'subscriptionSecurity'
+  name: 'subscriptionSecurity-${environmentName}'
   scope: subscription()
   params: {
     enableDefenderForAppServices: enableDefenderForAppServices

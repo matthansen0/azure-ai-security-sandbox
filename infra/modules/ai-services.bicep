@@ -1,4 +1,6 @@
 // ai-services.bicep - Azure OpenAI and AI Search
+// Note: Cognitive Services has enforced soft-delete (90 days). Set restoreSoftDeletedOpenAi=true if redeploying after deletion.
+// AI Search does not have soft-delete.
 
 param location string
 param openAiLocation string = location
@@ -6,6 +8,9 @@ param tags object = {}
 param openAiAccountName string
 param searchServiceName string
 param logAnalyticsWorkspaceId string
+
+@description('Set to true if a soft-deleted OpenAI resource with the same name exists and should be restored')
+param restoreSoftDeletedOpenAi bool = false
 
 // Azure OpenAI
 resource openAiAccount 'Microsoft.CognitiveServices/accounts@2024-04-01-preview' = {
@@ -19,7 +24,7 @@ resource openAiAccount 'Microsoft.CognitiveServices/accounts@2024-04-01-preview'
   properties: {
     customSubDomainName: openAiAccountName
     publicNetworkAccess: 'Enabled' // Public endpoints for demo
-    restore: true // Restore soft-deleted resource if exists
+    restore: restoreSoftDeletedOpenAi
     networkAcls: {
       defaultAction: 'Allow'
     }

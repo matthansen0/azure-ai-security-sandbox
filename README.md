@@ -101,6 +101,50 @@ azd env list           # List environments
 azd monitor            # Open Azure Portal monitoring
 ```
 
+### Deployment Parameters
+
+You can customize the deployment with optional parameters:
+
+```bash
+# Use a specific App Service SKU (default: B2)
+azd up --parameter appServicePlanSku=S1
+
+# Deploy to a specific region
+azd up --location canadacentral
+```
+
+### Troubleshooting
+
+#### Soft-Deleted Cognitive Services Resource
+
+Azure Cognitive Services (OpenAI) has **enforced soft-delete** (90-day retention). If you delete and redeploy with the same environment name, you may see:
+
+```
+FlagMustBeSetForRestore: An existing resource with ID '...' has been soft-deleted. 
+To restore the resource, you must specify 'restore' to be 'true' in the property.
+```
+
+**Fix:** Redeploy with the restore flag:
+```bash
+azd up --parameter restoreSoftDeletedOpenAi=true
+```
+
+Or purge the soft-deleted resource first:
+```bash
+az cognitiveservices account list-deleted
+az cognitiveservices account purge --name <name> --resource-group <rg> --location <location>
+azd up
+```
+
+#### Subscription-Level Deployment Conflicts
+
+If you see `InvalidDeploymentLocation` errors when switching regions, delete the stale deployment record:
+
+```bash
+az deployment sub delete --name subscriptionSecurity-<environment-name>
+azd up --location <new-region>
+```
+
 ### Deploy with Bash Script (Alternative)
 
 ```bash
