@@ -19,6 +19,12 @@
     },
     "restoreSoftDeletedOpenAi": {
       "value": "${restoreSoftDeletedOpenAi=false}"
+    },
+    "useAFD": {
+      "value": "${USE_AFD=true}"
+    },
+    "backendImageName": {
+      "value": "${SERVICE_BACKEND_IMAGE_NAME=}"
     }
   }
 }

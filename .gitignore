@@ -27,6 +27,12 @@ venv/
 ENV/
 env/
 
+# Node.js
+node_modules/
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+
 # IDE
 .vscode/
 !.vscode/extensions.json
@@ -61,3 +67,8 @@ htmlcov/
 
 # Build outputs
 *.zip
+
+# Bicep compiled ARM templates
+infra/*.json
+!infra/abbreviations.json
+!infra/main.parameters.json

@@ -7,6 +7,13 @@ param containerAppName string
 param resourceGroupName string
 param azureSubscriptionId string
 
+// Container Registry (for azd deploy image builds)
+param containerRegistryName string
+param containerRegistryLoginServer string
+
+// Image name - injected by azd deploy; empty on first provision
+param imageName string = ''
+
 // Application configuration
 param applicationInsightsConnectionString string
 param logAnalyticsWorkspaceId string
@@ -29,8 +36,11 @@ var searchAdminKey = listAdminKeys(resourceId('Microsoft.Search/searchServices',
 var resolvedSearchIndexName = !empty(trim(searchIndexName)) ? searchIndexName : 'gptkbindex'
 var storageContainer = 'content'
 
-// Container image for azure-search-openai-demo
-var containerImage = 'mcr.microsoft.com/azure-search-openai-demo:latest'
+// Container image - use placeholder during initial provision, real image after azd deploy
+var containerImage = !empty(imageName) ? imageName : 'mcr.microsoft.com/azuredocs/containerapps-helloworld:latest'
+
+// Get ACR credentials for registry auth
+var registryPassword = listCredentials(resourceId('Microsoft.ContainerRegistry/registries', containerRegistryName), '2023-07-01').passwords[0].value
 
 // Container Apps Environment
 resource containerAppsEnvironment 'Microsoft.App/managedEnvironments@2024-03-01' = {
@@ -77,8 +87,18 @@ resource containerApp 'Microsoft.App/containerApps@2024-03-01' = {
           allowedHeaders: ['*']
         }
       }
-      registries: []
+      registries: [
+        {
+          server: containerRegistryLoginServer
+          username: containerRegistryName
+          passwordSecretRef: 'registry-password'
+        }
+      ]
       secrets: [
+        {
+          name: 'registry-password'
+          value: registryPassword
+        }
         {
           name: 'openai-api-key'
           value: openAiKey
@@ -138,6 +158,10 @@ resource containerApp 'Microsoft.App/containerApps@2024-03-01' = {
             {
               name: 'AZURE_OPENAI_CHATGPT_DEPLOYMENT'
               value: openAiDeploymentName
+            }
+            {
+              name: 'AZURE_OPENAI_CHATGPT_MODEL'
+              value: 'gpt-4o'
             }
             {
               name: 'AZURE_OPENAI_EMBEDDING_DEPLOYMENT'
@@ -233,7 +257,7 @@ resource containerApp 'Microsoft.App/containerApps@2024-03-01' = {
             }
             {
               name: 'USE_USER_UPLOAD'
-              value: 'true'
+              value: 'false'
             }
             {
               name: 'USE_CHAT_HISTORY_BROWSER'
@@ -278,3 +302,4 @@ output containerAppId string = containerApp.id
 output containerAppName string = containerApp.name
 output containerAppFqdn string = containerApp.properties.configuration.ingress.fqdn
 output identityPrincipalId string = containerApp.identity.principalId
+output imageName string = containerImage

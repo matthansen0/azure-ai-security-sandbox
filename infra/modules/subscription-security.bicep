@@ -2,8 +2,8 @@
 
 targetScope = 'subscription'
 
-param enableDefenderForAppServices bool = true
-param enableDefenderForCosmosDb bool = true
+param enableDefenderForAppServices bool = false
+param enableDefenderForCosmosDb bool = false
 
 // Defender for App Services (subscription-wide, cannot be resource-scoped)
 resource defenderForAppServices 'Microsoft.Security/pricings@2024-01-01' = if (enableDefenderForAppServices) {

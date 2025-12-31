@@ -5,7 +5,7 @@
 
 ## ✨ Overview
 
-A self-contained Azure AI security demonstration platform featuring a RAG (Retrieval-Augmented Generation) chat application with enterprise-grade security controls. This project deploys everything from scratch using Bicep and pulls the official [azure-search-openai-demo](https://github.com/Azure-Samples/azure-search-openai-demo) container image from Microsoft Container Registry.
+A self-contained Azure AI security demonstration platform featuring a RAG (Retrieval-Augmented Generation) chat application with enterprise-grade security controls. This project deploys everything from scratch using Bicep, pulls the [azure-search-openai-demo](https://github.com/Azure-Samples/azure-search-openai-demo) app from upstream at build time, builds it in Azure Container Registry, and deploys to Azure Container Apps with optional Azure Front Door + WAF. **No application code is stored in this repo**—only infrastructure and a minimal Dockerfile.
 
 > [!WARNING]  
 > This repo is under active development for v1.0 release.
@@ -28,7 +28,7 @@ A self-contained Azure AI security demonstration platform featuring a RAG (Retri
                                   ▼
 ┌─────────────────────────────────────────────────────────────────────┐
 │                    Azure Container Apps                              │
-│                    • RAG Chat Application (MCR image)               │
+│                    • RAG Chat Application (image built via ACR)     │
 │                    • Managed Identity                                │
 │                    • Auto-scaling                                    │
 └───────────┬─────────────────────┼─────────────────────┬─────────────┘
@@ -93,9 +93,17 @@ azd up
 That's it! `azd up` will:
 1. Prompt you for an environment name and Azure region
 2. Provision all infrastructure via Bicep
-3. Deploy Container Apps (pulls RAG app image from MCR)
-4. Configure Front Door routing
+3. Clone azure-search-openai-demo from GitHub, build the image in ACR, and deploy to Container Apps
+4. Configure Front Door routing if `useAFD` is true
 5. Output the application URL
+
+To skip Front Door for faster iteration, disable it during provisioning:
+
+```bash
+azd up --parameter useAFD=false
+```
+
+When Front Door is disabled, `APP_PUBLIC_URL` points directly to the Container App FQDN.
 
 #### Other azd Commands
 
@@ -113,6 +121,16 @@ You can customize the deployment with optional parameters:
 ```bash
 # Deploy to a specific region
 azd up --location canadacentral
+```
+
+Other useful parameters:
+
+```bash
+# Disable Azure Front Door (use Container Apps URL directly)
+azd up --parameter useAFD=false
+
+# Keep Defender for App Services and Cosmos DB opt-in (defaults are false)
+azd up --parameter enableDefenderForAppServices=false --parameter enableDefenderForCosmosDb=false
 ```
 
 ### Troubleshooting
@@ -169,9 +187,9 @@ az login
 4. **Azure AI Search** for document indexing
 5. **Azure Storage** for document blobs
 6. **Azure Cosmos DB** for chat history
-7. **Azure Container Apps** running the RAG application (image from MCR)
-8. **Azure Front Door + WAF** for edge protection
-9. **Microsoft Defender** plans for all applicable resources
+7. **Azure Container Apps** running the RAG application (cloned from upstream and built in ACR at deploy time)
+8. **Azure Front Door + WAF** for edge protection (set `useAFD=false` to skip)
+9. **Microsoft Defender** for Storage; subscription-level Defender for App Services and Cosmos DB remain opt-in
 
 ### Access the Application
 
@@ -185,6 +203,9 @@ https://<your-frontdoor-endpoint>.azurefd.net
 
 ```
 azure-ai-security-sandbox/
+├── app/                        # Application build assets
+│   └── backend/               # Dockerfile only (clones upstream at build time)
+│       └── Dockerfile
 ├── infra/                      # Bicep infrastructure
 │   ├── main.bicep             # Main orchestration
 │   ├── main.parameters.json   # Default parameters
@@ -199,10 +220,6 @@ azure-ai-security-sandbox/
 │       ├── security.bicep     # Defender configurations
 │       ├── storage.bicep      # Storage account
 │       └── subscription-security.bicep # Subscription-level Defender
-├── src/                        # (Optional) Local development
-│   └── backend/               # Minimal backend for testing
-│       ├── main.py
-│       └── requirements.txt
 ├── docs/                       # Documentation
 ├── azure.yaml                  # Azure Developer CLI configuration
 ├── deploy.sh                   # Bash deployment script
@@ -213,7 +230,7 @@ azure-ai-security-sandbox/
 ## 📝 Roadmap
 
 ### v1.0 (Current Focus)
-- [x] Container Apps deployment (pulls azure-search-openai-demo from MCR)
+- [x] Container Apps deployment (builds from repo and pushes to ACR)
 - [x] Bicep-based infrastructure
 - [x] Front Door + WAF
 - [x] Defender for AI, Storage, Cosmos DB

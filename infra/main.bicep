@@ -18,13 +18,22 @@ param openAiLocation string = location
 param tags object = {}
 
 @description('Enable Defender for App Services at subscription level')
-param enableDefenderForAppServices bool = true
+param enableDefenderForAppServices bool = false
 
 @description('Enable Defender for Cosmos DB at subscription level')
-param enableDefenderForCosmosDb bool = true
+param enableDefenderForCosmosDb bool = false
 
 @description('Set to true to restore a soft-deleted OpenAI resource with the same name')
 param restoreSoftDeletedOpenAi bool = false
+
+@description('Deploy Azure Front Door with WAF (set to false for faster iterations during development)')
+param useAFD bool = true
+
+@description('Container Registry name (optional - auto-generated if not provided)')
+param containerRegistryName string = ''
+
+@description('Backend service container image name (set by azd deploy)')
+param backendImageName string = ''
 
 // Generate unique suffix for globally unique resource names
 var resourceToken = toLower(uniqueString(subscription().id, environmentName, location))
@@ -35,6 +44,17 @@ resource rg 'Microsoft.Resources/resourceGroups@2024-03-01' = {
   name: '${abbrs.resourcesResourceGroups}${environmentName}'
   location: location
   tags: union(tags, { 'azd-env-name': environmentName })
+}
+
+// Container Registry for remote builds
+module containerRegistry 'modules/container-registry.bicep' = {
+  name: 'containerRegistry'
+  scope: rg
+  params: {
+    name: !empty(containerRegistryName) ? containerRegistryName : '${abbrs.containerRegistryRegistries}${resourceToken}'
+    location: location
+    tags: tags
+  }
 }
 
 // Monitoring (Log Analytics + App Insights)
@@ -97,6 +117,9 @@ module containerApps 'modules/container-apps.bicep' = {
     tags: tags
     containerAppsEnvName: '${abbrs.appManagedEnvironments}${resourceToken}'
     containerAppName: '${abbrs.appContainerApps}${resourceToken}'
+    containerRegistryName: containerRegistry.outputs.name
+    containerRegistryLoginServer: containerRegistry.outputs.loginServer
+    imageName: backendImageName
     resourceGroupName: rg.name
     azureSubscriptionId: subscription().subscriptionId
     applicationInsightsConnectionString: monitoring.outputs.applicationInsightsConnectionString
@@ -130,8 +153,8 @@ module containerAppRoleAssignments 'modules/role-assignments.bicep' = {
   }
 }
 
-// Front Door with WAF
-module frontDoor 'modules/front-door.bicep' = {
+// Front Door with WAF (optional - can be disabled for faster dev iterations)
+module frontDoor 'modules/front-door.bicep' = if (useAFD) {
   name: 'frontDoor'
   scope: rg
   params: {
@@ -166,19 +189,24 @@ module subscriptionSecurity 'modules/subscription-security.bicep' = {
 output RESOURCE_GROUP_NAME string = rg.name
 output AZURE_LOCATION string = location
 
+// Container Registry outputs (needed for azd deploy)
+output AZURE_CONTAINER_REGISTRY_NAME string = containerRegistry.outputs.name
+output AZURE_CONTAINER_REGISTRY_ENDPOINT string = containerRegistry.outputs.loginServer
+
 // Container Apps outputs
 output CONTAINER_APP_NAME string = containerApps.outputs.containerAppName
 output CONTAINER_APP_FQDN string = containerApps.outputs.containerAppFqdn
 output APP_INTERNAL_URL string = 'https://${containerApps.outputs.containerAppFqdn}'
+output SERVICE_BACKEND_IMAGE_NAME string = containerApps.outputs.imageName
 
-// Primary public URL (Front Door)
-output APP_PUBLIC_URL string = 'https://${frontDoor.outputs.frontDoorEndpointHostName}'
+// Primary public URL (Front Door if enabled, otherwise Container App direct)
+output APP_PUBLIC_URL string = useAFD ? 'https://${frontDoor.outputs.frontDoorEndpointHostName}' : 'https://${containerApps.outputs.containerAppFqdn}'
 
-// Front Door outputs
-output FRONTDOOR_ENDPOINT string = frontDoor.outputs.frontDoorEndpointHostName
-output FRONTDOOR_URL string = 'https://${frontDoor.outputs.frontDoorEndpointHostName}'
-output FRONTDOOR_PROFILE_NAME string = frontDoor.outputs.frontDoorProfileName
-output FRONTDOOR_ENDPOINT_NAME string = frontDoor.outputs.frontDoorEndpointName
+// Front Door outputs (only when AFD is enabled)
+output FRONTDOOR_ENDPOINT string = useAFD ? frontDoor.outputs.frontDoorEndpointHostName : ''
+output FRONTDOOR_URL string = useAFD ? 'https://${frontDoor.outputs.frontDoorEndpointHostName}' : ''
+output FRONTDOOR_PROFILE_NAME string = useAFD ? frontDoor.outputs.frontDoorProfileName : ''
+output FRONTDOOR_ENDPOINT_NAME string = useAFD ? frontDoor.outputs.frontDoorEndpointName : ''
 
 // AI Services outputs
 output AZURE_OPENAI_ENDPOINT string = aiServices.outputs.openAiEndpoint
