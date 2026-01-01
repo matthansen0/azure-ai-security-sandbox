@@ -1,0 +1,55 @@
+# Azure Developer CLI (azd) configuration
+# Run 'azd up' to provision infrastructure and deploy the application
+
+name: azure-ai-security-sandbox
+metadata:
+  template: azure-ai-security-sandbox@0.1.0
+
+# Infrastructure configuration
+infra:
+  provider: bicep
+  path: infra
+  module: main
+
+# Services - backend is built and deployed to Container Apps
+services:
+  backend:
+    project: ./app/backend
+    language: py
+    host: containerapp
+    docker:
+      remoteBuild: true
+
+# Hooks for custom deployment logic
+hooks:
+  # Post-provision: Configure Front Door routes (only if AFD is enabled)
+  postprovision:
+    shell: sh
+    run: |
+      if [ -n "$FRONTDOOR_PROFILE_NAME" ] && [ "$FRONTDOOR_PROFILE_NAME" != "" ]; then
+        echo "Ensuring Front Door endpoint and route are enabled..."
+        az afd endpoint update \
+          --resource-group $RESOURCE_GROUP_NAME \
+          --profile-name $FRONTDOOR_PROFILE_NAME \
+          --name $FRONTDOOR_ENDPOINT_NAME \
+          --enabled-state Enabled \
+          --output none 2>/dev/null || true
+
+        az afd route update \
+          --resource-group $RESOURCE_GROUP_NAME \
+          --profile-name $FRONTDOOR_PROFILE_NAME \
+          --endpoint-name $FRONTDOOR_ENDPOINT_NAME \
+          --name default-route \
+          --origin-group containerapp-origin-group \
+          --origin-path / \
+          --patterns-to-match "/*" \
+          --forwarding-protocol HttpsOnly \
+          --https-redirect Enabled \
+          --supported-protocols Http Https \
+          --enabled-state Enabled \
+          --output none 2>/dev/null || true
+      else
+        echo "Front Door is disabled (USE_AFD=false). Skipping AFD configuration."
+        echo "App is accessible directly at: $APP_PUBLIC_URL"
+      fi
+
