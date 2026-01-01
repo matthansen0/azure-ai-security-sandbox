@@ -35,18 +35,20 @@ A self-contained Azure AI security demonstration platform featuring a RAG (Retri
             │                     │                     │
             ▼                     ▼                     ▼
 ┌───────────────────┐  ┌───────────────────┐  ┌───────────────────────┐
-│   Azure OpenAI    │  │  Azure AI Search  │  │    Azure Storage      │
-│   • GPT-4o        │  │  • Vector Search  │  │    • Documents        │
-│   • Embeddings    │  │  • Semantic       │  │    • Defender         │
-│   • Defender AI   │  │    Ranking        │  │    • Malware Scan     │
-└───────────────────┘  └───────────────────┘  └───────────────────────┘
-            │                                           │
-            │                                           ▼
-            │                                 ┌───────────────────────┐
-            │                                 │    Azure Cosmos DB    │
-            │                                 │    • Chat History     │
-            │                                 │    • Defender         │
-            │                                 └───────────────────────┘
+│  Azure API Mgmt   │  │  Azure AI Search  │  │    Azure Storage      │
+│  (AI Gateway)     │  │  • Vector Search  │  │    • Documents        │
+│  • Rate Limiting  │  │  • Semantic       │  │    • Defender         │
+│  • Token Tracking │  │    Ranking        │  │    • Malware Scan     │
+│  • Managed ID     │  └───────────────────┘  └───────────────────────┘
+└─────────┬─────────┘                                   │
+          │                                             ▼
+          ▼                                   ┌───────────────────────┐
+┌───────────────────┐                         │    Azure Cosmos DB    │
+│   Azure OpenAI    │                         │    • Chat History     │
+│   • GPT-4o        │                         │    • Defender         │
+│   • Embeddings    │                         └───────────────────────┘
+│   • Defender AI   │
+└───────────────────┘
             │
             ▼
 ┌───────────────────────────────────────────────────────────────────────┐
@@ -59,11 +61,23 @@ A self-contained Azure AI security demonstration platform featuring a RAG (Retri
 | Component | Protection | Description |
 |-----------|------------|-------------|
 | **Front Door + WAF** | Edge Security | OWASP managed rules, bot protection, DDoS mitigation, rate limiting |
+| **API Management** | AI Gateway | Centralized AI endpoint management, rate limiting, token tracking, request/response logging |
 | **Defender for AI** | AI Threat Detection | Prompt injection detection, jailbreak attempts, data exfiltration monitoring |
 | **Defender for Storage** | Data Protection | Malware scanning on upload, sensitive data discovery (PII/PCI/PHI) |
 | **Container Apps** | Serverless Containers | Auto-scaling, managed environment, no infrastructure to manage |
 | **Defender for Cosmos DB** | Database Security | SQL injection detection, anomalous access patterns, data exfiltration alerts |
 | **Managed Identities** | Zero Secrets | No keys in code—all services authenticate via Azure AD |
+
+### 🚪 API Management as AI Gateway
+
+Azure API Management acts as a centralized **AI Gateway** providing:
+
+- **Rate Limiting** - Per-subscription rate limits (60 requests/min default)
+- **Token Tracking** - Automatic extraction and logging of token usage from OpenAI responses
+- **Managed Identity Auth** - APIM authenticates to Azure OpenAI using its managed identity (no keys)
+- **Retry Logic** - Automatic retry with exponential backoff for 429s and 5xx errors
+- **Request/Response Logging** - Full audit trail in Application Insights
+- **Centralized Policies** - Apply consistent security policies across all AI consumers
 
 ## 🚀 Quick Start
 
@@ -103,6 +117,18 @@ To skip Front Door for faster iteration, disable it during provisioning:
 azd up --parameter useAFD=false
 ```
 
+To skip API Management (APIM AI Gateway) for faster iteration:
+
+```bash
+azd up --parameter useAPIM=false
+```
+
+Or disable both for the fastest development cycle:
+
+```bash
+azd up --parameter useAFD=false --parameter useAPIM=false
+```
+
 When Front Door is disabled, `APP_PUBLIC_URL` points directly to the Container App FQDN.
 
 #### Other azd Commands
@@ -128,6 +154,12 @@ Other useful parameters:
 ```bash
 # Disable Azure Front Door (use Container Apps URL directly)
 azd up --parameter useAFD=false
+
+# Disable Azure API Management (AI Gateway)
+azd up --parameter useAPIM=false
+
+# Use Developer SKU for APIM (cheaper for non-production)
+azd up --parameter apimSku=Developer
 
 # Keep Defender for App Services and Cosmos DB opt-in (defaults are false)
 azd up --parameter enableDefenderForAppServices=false --parameter enableDefenderForCosmosDb=false

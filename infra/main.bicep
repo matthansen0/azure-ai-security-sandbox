@@ -29,6 +29,13 @@ param restoreSoftDeletedOpenAi bool = false
 @description('Deploy Azure Front Door with WAF (set to false for faster iterations during development)')
 param useAFD bool = true
 
+@description('Deploy Azure API Management as AI Gateway (set to false for faster iterations during development)')
+param useAPIM bool = true
+
+@description('API Management SKU - Developer for non-production, BasicV2/StandardV2 for production')
+@allowed(['Developer', 'BasicV2', 'StandardV2'])
+param apimSku string = 'BasicV2'
+
 @description('Container Registry name (optional - auto-generated if not provided)')
 param containerRegistryName string = ''
 
@@ -153,6 +160,35 @@ module containerAppRoleAssignments 'modules/role-assignments.bicep' = {
   }
 }
 
+// Azure API Management - AI Gateway (optional - can be disabled for faster dev iterations)
+module apiManagement 'modules/api-management.bicep' = if (useAPIM) {
+  name: 'apiManagement'
+  scope: rg
+  params: {
+    location: location
+    tags: tags
+    apimServiceName: '${abbrs.apiManagementService}${resourceToken}'
+    skuName: apimSku
+    logAnalyticsWorkspaceId: monitoring.outputs.logAnalyticsWorkspaceId
+    applicationInsightsId: monitoring.outputs.applicationInsightsId
+    applicationInsightsInstrumentationKey: monitoring.outputs.applicationInsightsInstrumentationKey
+    openAiEndpoint: aiServices.outputs.openAiEndpoint
+  }
+}
+
+// Role assignment for APIM managed identity to access Azure OpenAI
+module apimRoleAssignments 'modules/role-assignments.bicep' = if (useAPIM) {
+  name: 'apimRoleAssignments'
+  scope: rg
+  params: {
+    principalId: useAPIM ? apiManagement.outputs.apimIdentityPrincipalId : ''
+    openAiAccountName: aiServices.outputs.openAiAccountName
+    searchServiceName: aiServices.outputs.searchServiceName
+    storageAccountName: storage.outputs.storageAccountName
+    cosmosDbAccountName: cosmosDb.outputs.cosmosDbAccountName
+  }
+}
+
 // Front Door with WAF (optional - can be disabled for faster dev iterations)
 module frontDoor 'modules/front-door.bicep' = if (useAFD) {
   name: 'frontDoor'
@@ -220,3 +256,7 @@ output AZURE_STORAGE_BLOB_ENDPOINT string = storage.outputs.blobEndpoint
 
 // Cosmos DB outputs
 output AZURE_COSMOSDB_ENDPOINT string = cosmosDb.outputs.cosmosDbEndpoint
+// API Management outputs (only when APIM is enabled)
+output APIM_GATEWAY_URL string = useAPIM ? apiManagement.outputs.apimGatewayUrl : ''
+output APIM_SERVICE_NAME string = useAPIM ? apiManagement.outputs.apimServiceName : ''
+output AZURE_OPENAI_VIA_APIM string = useAPIM ? '${apiManagement.outputs.apimGatewayUrl}/${apiManagement.outputs.openAiApiPath}' : ''
