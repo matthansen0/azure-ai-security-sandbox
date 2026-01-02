@@ -66,6 +66,11 @@ hooks:
         echo "Installing prepdocs dependencies..."
         ./.venv/bin/pip install -q -r ./upstream/app/backend/requirements.txt
         
+        # Set environment variables required by prepdocs
+        export OPENAI_HOST="azure"
+        export AZURE_OPENAI_CHATGPT_DEPLOYMENT="gpt-4o"
+        export AZURE_OPENAI_EMB_DEPLOYMENT="text-embedding-3-small"
+        
         # Run prepdocs with upstream data
         echo "Indexing documents..."
         ./.venv/bin/python ./upstream/app/backend/prepdocs.py './upstream/data/*' --verbose
