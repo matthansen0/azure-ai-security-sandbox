@@ -125,6 +125,18 @@ That's it! `azd up` will:
 4. Configure Front Door routing if `useAFD` is true
 5. Output the application URL
 
+> **⏱️ Deployment Time:** Full deployment takes **30-50 minutes** depending on configuration:
+> | Resource | Time |
+> |----------|------|
+> | Most resources | < 30 seconds |
+> | Cosmos DB | ~1-2 minutes |
+> | APIM (BasicV2) | ~5-10 minutes |
+> | APIM (Developer) | ~20-40 minutes |
+> | Front Door + WAF | ~10-15 minutes |
+> | AFD WAF propagation | ~30-45 minutes |
+>
+> **Fastest iteration:** Use `--parameter useAFD=false --parameter useAPIM=false` to deploy in ~5 minutes.
+
 To skip Front Door for faster iteration, disable it during provisioning:
 
 ```bash
