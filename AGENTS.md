@@ -143,6 +143,22 @@ curl -s -X POST "https://<afd-endpoint>/chat" \
 azd down --force --purge  # Triggers postdown hook to purge APIM and Cognitive Services
 ```
 
+> **Note:** `azd down` can sometimes be flaky. If resources aren't deleted, use:
+> ```bash
+> az group delete -n rg-<env-name> --yes --no-wait
+> ```
+
+### Finding Resources by Token
+
+All resources in an environment share a unique token (e.g., `yemy7aspuew3e`). To find resources:
+```bash
+# Get the token from any resource name
+az resource list -g rg-<env> --query "[].name" -o tsv | head -1 | sed 's/.*-//'
+
+# Or from azd env
+azd env get-values | grep -i token
+```
+
 ## Environment Variables
 
 Set via `azd env set <KEY> <VALUE>`:
@@ -211,6 +227,8 @@ When adding new security features:
 | `openai.NotFoundError` | See "APIM + OpenAI SDK Integration" section below |
 
 ## APIM + OpenAI SDK Integration (Critical!)
+
+> **⚠️ KNOWN ISSUE (as of Jan 2026):** The APIM URL rewrite operation for OpenAI SDK-style requests (`/chat/completions`) is **documented but NOT YET IMPLEMENTED** in `api-management.bicep`. The next task is to add an operation that handles `/chat/completions` and rewrites it to `/deployments/{model}/chat/completions`. See the policy example below.
 
 This section documents non-obvious behavior when routing OpenAI SDK requests through APIM.
 
