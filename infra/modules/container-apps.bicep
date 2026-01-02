@@ -168,6 +168,17 @@ resource containerApp 'Microsoft.App/containerApps@2024-03-01' = {
               value: resolvedOpenAiEndpoint
             }
             {
+              // When APIM is enabled, use 'azure_custom' to allow custom URL routing through the gateway
+              name: 'OPENAI_HOST'
+              value: useApimGateway ? 'azure_custom' : 'azure'
+            }
+            {
+              // Custom URL for APIM gateway routing - required when OPENAI_HOST=azure_custom
+              // apimOpenAiEndpoint already includes /openai path, so just add /v1
+              name: 'AZURE_OPENAI_CUSTOM_URL'
+              value: useApimGateway ? '${apimOpenAiEndpoint}/v1' : ''
+            }
+            {
               name: 'AZURE_OPENAI_CHAT_DEPLOYMENT'
               value: openAiDeploymentName
             }
