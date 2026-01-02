@@ -27,6 +27,12 @@ User → Azure Front Door (WAF) → Azure API Management (AI Gateway) → Contai
 
 ## Code Layout
 
+> **⚠️ Multiple Project Roots:** This workspace contains TWO project roots:
+> 1. **`/` (this repo)** - Security infrastructure and configuration (edit freely)
+> 2. **`/upstream/`** - Git submodule of `azure-search-openai-demo` (**read-only, do not modify**)
+>
+> The upstream submodule has its own `AGENTS.md` - ignore it when working on this project.
+
 ### Infrastructure (`/infra`)
 - `main.bicep` - Main orchestration, parameters, outputs
 - `main.parameters.json` - azd parameter mappings
