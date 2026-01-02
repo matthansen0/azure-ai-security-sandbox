@@ -270,6 +270,104 @@ resource completionsOperation 'Microsoft.ApiManagement/service/apis/operations@2
   }
 }
 
+// OpenAI SDK-compatible Chat Completions (without deployment in URL)
+// This operation handles requests from the standard OpenAI Python SDK
+// which sends requests to /chat/completions with model in the body
+resource openaiSdkChatCompletionsOperation 'Microsoft.ApiManagement/service/apis/operations@2023-09-01-preview' = {
+  parent: openAiApi
+  name: 'openai-sdk-chat-completions'
+  properties: {
+    displayName: 'OpenAI SDK - Chat Completions'
+    description: 'Handles OpenAI SDK-style requests and rewrites to Azure format'
+    method: 'POST'
+    urlTemplate: '/chat/completions'
+  }
+}
+
+// Policy to rewrite OpenAI SDK requests to Azure OpenAI format
+resource openaiSdkChatCompletionsPolicy 'Microsoft.ApiManagement/service/apis/operations/policies@2023-09-01-preview' = {
+  parent: openaiSdkChatCompletionsOperation
+  name: 'policy'
+  properties: {
+    format: 'xml'
+    value: '''
+<policies>
+    <inbound>
+        <base />
+        <!-- Extract model from request body and rewrite URL to Azure format -->
+        <set-variable name="request-body" value="@(context.Request.Body.As<JObject>(preserveContent: true))" />
+        <set-variable name="model" value="@{
+            var body = (JObject)context.Variables["request-body"];
+            return body?["model"]?.ToString() ?? "gpt-4o";
+        }" />
+        <!-- Rewrite URL to include deployment name -->
+        <rewrite-uri template="@($"/deployments/{context.Variables["model"]}/chat/completions?api-version=2024-06-01")" copy-unmatched-params="false" />
+        <trace source="AI Gateway" severity="information">
+            <message>@($"OpenAI SDK request rewritten: model={context.Variables["model"]}")</message>
+        </trace>
+    </inbound>
+    <backend>
+        <base />
+    </backend>
+    <outbound>
+        <base />
+    </outbound>
+    <on-error>
+        <base />
+    </on-error>
+</policies>
+'''
+  }
+}
+
+// OpenAI SDK-compatible Embeddings (without deployment in URL)
+resource openaiSdkEmbeddingsOperation 'Microsoft.ApiManagement/service/apis/operations@2023-09-01-preview' = {
+  parent: openAiApi
+  name: 'openai-sdk-embeddings'
+  properties: {
+    displayName: 'OpenAI SDK - Embeddings'
+    description: 'Handles OpenAI SDK-style embedding requests and rewrites to Azure format'
+    method: 'POST'
+    urlTemplate: '/embeddings'
+  }
+}
+
+// Policy to rewrite OpenAI SDK embedding requests to Azure format
+resource openaiSdkEmbeddingsPolicy 'Microsoft.ApiManagement/service/apis/operations/policies@2023-09-01-preview' = {
+  parent: openaiSdkEmbeddingsOperation
+  name: 'policy'
+  properties: {
+    format: 'xml'
+    value: '''
+<policies>
+    <inbound>
+        <base />
+        <!-- Extract model from request body and rewrite URL to Azure format -->
+        <set-variable name="request-body" value="@(context.Request.Body.As<JObject>(preserveContent: true))" />
+        <set-variable name="model" value="@{
+            var body = (JObject)context.Variables["request-body"];
+            return body?["model"]?.ToString() ?? "text-embedding-3-small";
+        }" />
+        <!-- Rewrite URL to include deployment name -->
+        <rewrite-uri template="@($"/deployments/{context.Variables["model"]}/embeddings?api-version=2024-06-01")" copy-unmatched-params="false" />
+        <trace source="AI Gateway" severity="information">
+            <message>@($"OpenAI SDK embedding request rewritten: model={context.Variables["model"]}")</message>
+        </trace>
+    </inbound>
+    <backend>
+        <base />
+    </backend>
+    <outbound>
+        <base />
+    </outbound>
+    <on-error>
+        <base />
+    </on-error>
+</policies>
+'''
+  }
+}
+
 // AI Gateway Policy - Applied at API level
 // Includes: Rate limiting, token counting, managed identity auth, retry logic, and caching
 resource openAiApiPolicy 'Microsoft.ApiManagement/service/apis/policies@2023-09-01-preview' = {

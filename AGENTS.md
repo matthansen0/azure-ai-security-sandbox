@@ -169,6 +169,122 @@ When adding new security features:
 | APIM soft-delete conflict | `az apim deletedservice purge --location <loc> --service-name <name>` |
 | Cognitive Services conflict | `az cognitiveservices account purge --location <loc> --name <name> -g <rg>` |
 | Container not starting | Check ACR image exists, check Container Apps logs |
+| `openai.NotFoundError` | See "APIM + OpenAI SDK Integration" section below |
+
+## APIM + OpenAI SDK Integration (Critical!)
+
+This section documents non-obvious behavior when routing OpenAI SDK requests through APIM.
+
+### URL Path Architecture
+
+The upstream `azure-search-openai-demo` uses `OPENAI_HOST=azure_custom` mode with the generic `AsyncOpenAI` client (NOT `AsyncAzureOpenAI`). This has important implications:
+
+**OpenAI SDK URL format** (what the app sends):
+```
+POST {base_url}/chat/completions
+Body: {"model": "gpt-4o", "messages": [...]}
+```
+
+**Azure OpenAI URL format** (what Azure expects):
+```
+POST {endpoint}/openai/deployments/{deployment}/chat/completions?api-version=2024-06-01
+```
+
+**APIM must bridge this gap** by rewriting URLs in its inbound policy.
+
+### Container App Environment Variables for APIM
+
+When `useAPIM=true`, the Container App needs these env vars:
+
+| Variable | Value | Purpose |
+|----------|-------|---------|
+| `OPENAI_HOST` | `azure_custom` | Tells app to use custom URL |
+| `AZURE_OPENAI_CUSTOM_URL` | `https://apim-xxx.azure-api.net/openai` | APIM gateway URL (NO trailing `/v1`) |
+| `AZURE_OPENAI_API_KEY_OVERRIDE` | APIM subscription key | Authentication to APIM |
+
+**Common mistakes:**
+- ❌ `https://apim.../openai/openai` - duplicate path segment
+- ❌ `https://apim.../openai/v1` - SDK doesn't use `/v1` for Azure
+- ✅ `https://apim.../openai` - correct base URL
+
+### APIM Policy for URL Rewriting
+
+The APIM inbound policy must extract the `model` from the request body and rewrite to Azure format:
+
+```xml
+<inbound>
+    <!-- Extract model from request body -->
+    <set-variable name="requestBody" value="@(context.Request.Body.As<JObject>(preserveContent: true))" />
+    <set-variable name="model" value="@((string)((JObject)context.Variables["requestBody"])["model"] ?? "gpt-4o")" />
+    
+    <!-- Rewrite URL to Azure OpenAI format -->
+    <rewrite-uri template="@("/deployments/" + (string)context.Variables["model"] + "/chat/completions")" />
+    <set-query-parameter name="api-version" exists-action="override">
+        <value>2024-06-01</value>
+    </set-query-parameter>
+</inbound>
+```
+
+### Authentication Flow
+
+```
+Container App                    APIM                         Azure OpenAI
+     |                            |                                |
+     |--- api-key: <sub-key> ---->|                                |
+     |                            |--- Authorization: Bearer --->  |
+     |                            |    (managed identity token)    |
+```
+
+- **Container App → APIM**: Uses APIM subscription key (`api-key` header)
+- **APIM → Azure OpenAI**: Uses APIM's managed identity (bearer token)
+- APIM deletes incoming `api-key` and adds `Authorization: Bearer <token>`
+
+### Debugging APIM Issues
+
+1. **Test APIM directly** (bypassing Container App):
+   ```bash
+   # Get subscription key
+   az apim subscription keys list --resource-group rg-<env> \
+     --service-name apim-<token> --subscription-id internal-apps --query primaryKey -o tsv
+   
+   # Test Azure-style URL (should work)
+   curl -X POST "https://apim-xxx.azure-api.net/openai/deployments/gpt-4o/chat/completions?api-version=2024-06-01" \
+     -H "api-key: <subscription-key>" \
+     -H "Content-Type: application/json" \
+     -d '{"messages":[{"role":"user","content":"Hi"}],"max_tokens":10}'
+   
+   # Test OpenAI-style URL (requires URL rewrite policy)
+   curl -X POST "https://apim-xxx.azure-api.net/openai/chat/completions" \
+     -H "api-key: <subscription-key>" \
+     -H "Content-Type: application/json" \
+     -d '{"model":"gpt-4o","messages":[{"role":"user","content":"Hi"}],"max_tokens":10}'
+   ```
+
+2. **Check Container App logs**:
+   ```bash
+   az containerapp logs show -n ca-<token> -g rg-<env> --type console --tail 50
+   ```
+   
+   Look for:
+   - `"OPENAI_HOST is azure_custom"` - confirms custom URL mode
+   - `"AZURE_OPENAI_API_KEY_OVERRIDE found"` - confirms API key auth (good)
+   - `"Using Azure credential (passwordless)"` - means API key NOT found (bad for APIM)
+
+3. **Check Container App env vars**:
+   ```bash
+   az containerapp show -n ca-<token> -g rg-<env> \
+     --query "properties.template.containers[0].env" -o table
+   ```
+
+### Common Error Patterns
+
+| Error | Cause | Fix |
+|-------|-------|-----|
+| `NotFoundError` from OpenAI SDK | URL path wrong or APIM can't route | Check `AZURE_OPENAI_CUSTOM_URL`, verify APIM policy |
+| `DeploymentNotFound` | Wrong deployment name | Check `AZURE_OPENAI_CHAT_DEPLOYMENT` matches actual deployment |
+| 401 Unauthorized | APIM managed identity missing role | Add "Cognitive Services OpenAI User" role to APIM identity |
+| 404 from APIM | No matching operation/route | APIM needs operation for `/chat/completions` with URL rewrite |
+| `"Using Azure credential"` in logs | `AZURE_OPENAI_API_KEY_OVERRIDE` empty/missing | Check secret reference in Container App |
 
 ## Related Documentation
 
