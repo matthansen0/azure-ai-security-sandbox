@@ -51,13 +51,19 @@ User → Azure Front Door (WAF) → Azure API Management (AI Gateway) → Contai
   - `storage.bicep` - Blob storage for documents
 
 ### Application (`/app`)
-- `backend/` - Python Quart app (from upstream azure-search-openai-demo)
 - `backend/Dockerfile` - Container build configuration
 
 ### Upstream Submodule (`/upstream`)
 - Git submodule pointing to `azure-search-openai-demo`
-- Source for app code, prepdocs scripts, and sample data
-- **Do not modify files in upstream/** - changes should go in `/app`
+- Used for prepdocs scripts and sample data
+- **Do not modify files in upstream/** - it's a git submodule
+
+> **⚠️ Container Image Build Behavior:**
+> The Dockerfile clones `azure-search-openai-demo` **from GitHub at build time** - it does NOT use the local `/upstream` submodule. This means:
+> - The deployed container always has the latest `main` branch code
+> - Local changes to `/upstream` won't affect the deployed app
+> - To understand app behavior, read `/upstream` code (it matches what's deployed)
+> - To customize the app, you'd need to modify the Dockerfile to copy local code instead
 
 ### Documentation (`/docs`)
 - `CAIRA_INDEX.md` - Cloud AI Risk Assessment index
