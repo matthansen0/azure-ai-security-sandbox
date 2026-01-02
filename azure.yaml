@@ -74,9 +74,9 @@ hooks:
         ./.venv/bin/pip install -q -r ./upstream/app/backend/requirements.txt
         
         # Set environment variables required by prepdocs
-        # Note: AZURE_OPENAI_ENDPOINT, AZURE_SEARCH_SERVICE, AZURE_STORAGE_ACCOUNT 
-        # are set by azd from Bicep outputs
+        # Map our Bicep output names to what prepdocs expects
         export OPENAI_HOST="azure"
+        export AZURE_OPENAI_EMB_DEPLOYMENT="$AZURE_OPENAI_EMBEDDING_DEPLOYMENT"
         export AZURE_SEARCH_INDEX="documents"
         export AZURE_STORAGE_CONTAINER="documents"
         export AZURE_STORAGE_RESOURCE_GROUP="$RESOURCE_GROUP_NAME"
