@@ -105,6 +105,39 @@ curl -X POST "https://<afd-endpoint>/chat" \
   -d '{"messages": [{"role": "user", "content": "What is Northwind Health Plus?"}]}'
 ```
 
+### Testing with curl (Detailed)
+
+After deployment, test each layer to isolate issues:
+
+```bash
+# 1. Get resource names from azd env
+azd env get-values | grep -E "ENDPOINT|URI|GATEWAY"
+
+# 2. Test Container App directly (bypasses Front Door + APIM)
+CONTAINER_APP_URL=$(az containerapp show -n ca-<token> -g rg-<env> --query "properties.configuration.ingress.fqdn" -o tsv)
+curl -s -X POST "https://${CONTAINER_APP_URL}/chat" \
+  -H "Content-Type: application/json" \
+  -d '{"messages":[{"role":"user","content":"What is Northwind Health Plus?"}]}' | jq .
+
+# 3. Test APIM directly (bypasses Front Door, tests APIM → OpenAI)
+APIM_KEY=$(az apim subscription keys list -g rg-<env> --service-name apim-<token> \
+  --subscription-id internal-apps --query primaryKey -o tsv)
+curl -s -X POST "https://apim-<token>.azure-api.net/openai/deployments/gpt-4o/chat/completions?api-version=2024-06-01" \
+  -H "api-key: ${APIM_KEY}" \
+  -H "Content-Type: application/json" \
+  -d '{"messages":[{"role":"user","content":"Say hi"}],"max_tokens":10}' | jq .
+
+# 4. Test through Front Door (full path)
+curl -s -X POST "https://<afd-endpoint>/chat" \
+  -H "Content-Type: application/json" \
+  -d '{"messages":[{"role":"user","content":"What is Northwind Health Plus?"}]}' | jq .
+```
+
+**Expected responses:**
+- Container App direct: Full RAG response with citations
+- APIM direct: Short OpenAI response (no RAG context)
+- Front Door: Same as Container App (full RAG response)
+
 ### Tear Down (with soft-delete purge)
 ```bash
 azd down --force --purge  # Triggers postdown hook to purge APIM and Cognitive Services
