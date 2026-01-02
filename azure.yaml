@@ -67,11 +67,16 @@ hooks:
         ./.venv/bin/pip install -q -r ./upstream/app/backend/requirements.txt
         
         # Set environment variables required by prepdocs
+        # Note: AZURE_OPENAI_ENDPOINT, AZURE_SEARCH_SERVICE, AZURE_STORAGE_ACCOUNT 
+        # are set by azd from Bicep outputs
         export OPENAI_HOST="azure"
-        export AZURE_OPENAI_CHATGPT_DEPLOYMENT="gpt-4o"
-        export AZURE_OPENAI_EMB_DEPLOYMENT="text-embedding-3-small"
+        export AZURE_SEARCH_INDEX="documents"
+        export AZURE_STORAGE_CONTAINER="documents"
+        export AZURE_STORAGE_RESOURCE_GROUP="$RESOURCE_GROUP_NAME"
+        export AZURE_OPENAI_EMB_MODEL_NAME="text-embedding-3-small"
+        export AZURE_OPENAI_EMB_DIMENSIONS="1536"
         
-        # Run prepdocs with upstream data
+        # Run prepdocs with upstream data (local strategy, not integrated vectorizer)
         echo "Indexing documents..."
         ./.venv/bin/python ./upstream/app/backend/prepdocs.py './upstream/data/*' --verbose
       else

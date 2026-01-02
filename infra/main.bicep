@@ -253,9 +253,11 @@ output FRONTDOOR_ENDPOINT_NAME string = useAFD ? frontDoor.outputs.frontDoorEndp
 
 // AI Services outputs
 output AZURE_OPENAI_ENDPOINT string = aiServices.outputs.openAiEndpoint
+output AZURE_OPENAI_SERVICE string = aiServices.outputs.openAiAccountName
 output AZURE_OPENAI_CHAT_DEPLOYMENT string = aiServices.outputs.chatDeploymentName
 output AZURE_OPENAI_EMBEDDING_DEPLOYMENT string = aiServices.outputs.embeddingDeploymentName
 output AZURE_SEARCH_ENDPOINT string = aiServices.outputs.searchEndpoint
+output AZURE_SEARCH_SERVICE string = aiServices.outputs.searchServiceName
 
 // Storage outputs
 output AZURE_STORAGE_ACCOUNT string = storage.outputs.storageAccountName
