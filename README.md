@@ -3,6 +3,20 @@
 [![Open in GitHub Codespaces](https://img.shields.io/static/v1?style=for-the-badge&label=GitHub+Codespaces&message=Open&color=brightgreen&logo=github)](https://github.com/codespaces/new?hide_repo_select=true&ref=main&repo=matthansen0%2Fazure-ai-security-sandbox&machine=standardLinux32gb&devcontainer_path=.devcontainer%2Fdevcontainer.json&location=WestUs2)
 [![Open in Dev Containers](https://img.shields.io/static/v1?style=for-the-badge&label=Dev%20Containers&message=Open&color=blue&logo=visualstudiocode)](https://vscode.dev/redirect?url=vscode://ms-vscode-remote.remote-containers/cloneInVolume?url=https%3A%2F%2Fgithub.com%2Fmatthansen0%2Fazure-ai-security-sandbox)
 
+## 📑 Table of Contents
+
+- [Overview](#-overview)
+- [Architecture](#️-architecture)
+- [Security Features](#-security-features)
+- [Quick Start](#-quick-start)
+- [Cost Estimation](#-cost-estimation)
+- [Project Structure](#-project-structure)
+- [Roadmap](#-roadmap)
+- [Cleanup](#-cleanup)
+- [Additional Resources](#-additional-resources)
+- [Contributing](#-contributing)
+- [License](#-license)
+
 ## ✨ Overview
 
 A self-contained Azure AI security demonstration platform featuring a RAG (Retrieval-Augmented Generation) chat application with enterprise-grade security controls. This project deploys everything from scratch using Bicep, pulls the [azure-search-openai-demo](https://github.com/Azure-Samples/azure-search-openai-demo) app from upstream at build time, builds it in Azure Container Registry, and deploys to Azure Container Apps with optional Azure Front Door + WAF. **No application code is stored in this repo**—only infrastructure and a minimal Dockerfile.
@@ -234,6 +248,36 @@ az login
 8. **Azure API Management** as AI Gateway for rate limiting, token tracking, and managed identity auth (set `useAPIM=false` to skip)
 9. **Azure Front Door + WAF** for edge protection (WAF defaults to Detection mode, set `useAFD=false` to skip)
 10. **Microsoft Defender** for Storage; subscription-level Defender for App Services and Cosmos DB remain opt-in
+
+### 💰 Cost Estimation
+
+Estimated costs for running the sandbox (low/dev usage). Actual costs vary based on usage.
+
+| Configuration | Daily | Monthly |
+|--------------|-------|---------|
+| **Full deployment** (BasicV2 APIM + AFD) | ~$11-12 | ~$320-350 |
+| **Developer APIM + AFD** | ~$7-8 | ~$200-230 |
+| **No APIM, No AFD** (fastest iteration) | ~$3-4 | ~$95-120 |
+
+**Cost breakdown by resource:**
+
+| Resource | Monthly Cost | Notes |
+|----------|-------------|-------|
+| API Management (BasicV2) | ~$180 | Use `Developer` SKU for ~$50 |
+| Front Door Premium + WAF | ~$45 | Base + WAF policy |
+| AI Search (Basic) | ~$75 | Fixed tier cost |
+| Azure OpenAI | ~$5-20 | Pay per token (GPT-4o + embeddings) |
+| Cosmos DB (Serverless) | ~$5-10 | Pay per RU |
+| Container Apps | ~$5-20 | Consumption-based |
+| Container Registry (Basic) | ~$5 | Image storage |
+| Storage Account | ~$1-2 | Blob storage for docs |
+| Log Analytics + App Insights | ~$5-10 | Pay per GB ingested |
+
+> **💡 Cost-saving tips:**
+> - Use `--parameter apimSku=Developer` for non-production (~$130/mo savings)
+> - Use `--parameter useAFD=false` to skip Front Door during development (~$45/mo savings)
+> - Use `--parameter useAPIM=false` to skip APIM for local testing (~$50-180/mo savings)
+> - Remember to `azd down --force --purge` when not using the environment
 
 ### Access the Application
 
