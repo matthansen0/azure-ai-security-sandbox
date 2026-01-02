@@ -55,6 +55,13 @@ hooks:
       
       # Run prepdocs from upstream submodule to populate search index
       echo "Running prepdocs to populate search index..."
+      
+      # Auto-initialize submodule if not present
+      if [ ! -f "./upstream/app/backend/prepdocs.py" ]; then
+        echo "Initializing upstream submodule..."
+        git submodule update --init --recursive
+      fi
+      
       if [ -d "./upstream" ]; then
         # Set up Python virtual environment if not exists
         if [ ! -d "./.venv" ]; then

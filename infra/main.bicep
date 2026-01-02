@@ -231,6 +231,7 @@ module subscriptionSecurity 'modules/subscription-security.bicep' = {
 // Outputs
 output RESOURCE_GROUP_NAME string = rg.name
 output AZURE_LOCATION string = location
+output AZURE_SUBSCRIPTION_ID string = subscription().subscriptionId
 
 // Container Registry outputs (needed for azd deploy)
 output AZURE_CONTAINER_REGISTRY_NAME string = containerRegistry.outputs.name

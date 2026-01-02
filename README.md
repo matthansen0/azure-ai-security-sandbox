@@ -109,8 +109,8 @@ Azure API Management acts as a centralized **AI Gateway** providing:
 The easiest way to deploy is with `azd`:
 
 ```bash
-# Clone the repository
-git clone https://github.com/matthansen0/azure-ai-security-sandbox.git
+# Clone the repository (--recurse-submodules pulls the upstream app code)
+git clone --recurse-submodules https://github.com/matthansen0/azure-ai-security-sandbox.git
 cd azure-ai-security-sandbox
 
 # Login to Azure
