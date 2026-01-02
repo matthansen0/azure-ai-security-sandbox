@@ -3,6 +3,7 @@
 param name string
 param location string = resourceGroup().location
 param tags object = {}
+param logAnalyticsWorkspaceId string = ''
 
 param adminUserEnabled bool = true  // Needed for Container Apps to pull images
 param sku object = {
@@ -17,6 +18,31 @@ resource containerRegistry 'Microsoft.ContainerRegistry/registries@2023-07-01' =
   properties: {
     adminUserEnabled: adminUserEnabled
     publicNetworkAccess: 'Enabled'
+  }
+}
+
+// Diagnostic settings for monitoring
+resource acrDiagnostics 'Microsoft.Insights/diagnosticSettings@2021-05-01-preview' = if (!empty(logAnalyticsWorkspaceId)) {
+  name: 'acr-diagnostics'
+  scope: containerRegistry
+  properties: {
+    workspaceId: logAnalyticsWorkspaceId
+    logs: [
+      {
+        category: 'ContainerRegistryRepositoryEvents'
+        enabled: true
+      }
+      {
+        category: 'ContainerRegistryLoginEvents'
+        enabled: true
+      }
+    ]
+    metrics: [
+      {
+        category: 'AllMetrics'
+        enabled: true
+      }
+    ]
   }
 }
 

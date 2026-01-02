@@ -1,0 +1,420 @@
+{
+  "$schema": "https://schema.management.azure.com/schemas/2019-04-01/deploymentTemplate.json#",
+  "contentVersion": "1.0.0.0",
+  "metadata": {
+    "_generator": {
+      "name": "bicep",
+      "version": "0.39.26.7824",
+      "templateHash": "11912248526102599587"
+    }
+  },
+  "parameters": {
+    "location": {
+      "type": "string"
+    },
+    "tags": {
+      "type": "object",
+      "defaultValue": {}
+    },
+    "apimServiceName": {
+      "type": "string"
+    },
+    "publisherEmail": {
+      "type": "string",
+      "defaultValue": "admin@contoso.com"
+    },
+    "publisherName": {
+      "type": "string",
+      "defaultValue": "AI Security Sandbox"
+    },
+    "logAnalyticsWorkspaceId": {
+      "type": "string"
+    },
+    "applicationInsightsId": {
+      "type": "string"
+    },
+    "applicationInsightsInstrumentationKey": {
+      "type": "string"
+    },
+    "skuName": {
+      "type": "string",
+      "defaultValue": "BasicV2",
+      "allowedValues": [
+        "Developer",
+        "BasicV2",
+        "StandardV2"
+      ],
+      "metadata": {
+        "description": "APIM SKU - Use Developer for non-production, BasicV2/StandardV2 for production"
+      }
+    },
+    "skuCapacity": {
+      "type": "int",
+      "defaultValue": 1,
+      "metadata": {
+        "description": "Number of APIM units"
+      }
+    },
+    "openAiEndpoint": {
+      "type": "string",
+      "metadata": {
+        "description": "Azure OpenAI endpoint URL"
+      }
+    }
+  },
+  "resources": [
+    {
+      "type": "Microsoft.ApiManagement/service",
+      "apiVersion": "2023-09-01-preview",
+      "name": "[parameters('apimServiceName')]",
+      "location": "[parameters('location')]",
+      "tags": "[parameters('tags')]",
+      "sku": {
+        "name": "[parameters('skuName')]",
+        "capacity": "[parameters('skuCapacity')]"
+      },
+      "identity": {
+        "type": "SystemAssigned"
+      },
+      "properties": {
+        "publisherEmail": "[parameters('publisherEmail')]",
+        "publisherName": "[parameters('publisherName')]",
+        "customProperties": {
+          "Microsoft.WindowsAzure.ApiManagement.Gateway.Security.Protocols.Tls11": "false",
+          "Microsoft.WindowsAzure.ApiManagement.Gateway.Security.Protocols.Tls10": "false",
+          "Microsoft.WindowsAzure.ApiManagement.Gateway.Security.Backend.Protocols.Tls11": "false",
+          "Microsoft.WindowsAzure.ApiManagement.Gateway.Security.Backend.Protocols.Tls10": "false",
+          "Microsoft.WindowsAzure.ApiManagement.Gateway.Security.Ciphers.TripleDes168": "false",
+          "Microsoft.WindowsAzure.ApiManagement.Gateway.Protocols.Server.Http2": "true"
+        }
+      }
+    },
+    {
+      "type": "Microsoft.ApiManagement/service/loggers",
+      "apiVersion": "2023-09-01-preview",
+      "name": "[format('{0}/{1}', parameters('apimServiceName'), 'appinsights-logger')]",
+      "properties": {
+        "loggerType": "applicationInsights",
+        "resourceId": "[parameters('applicationInsightsId')]",
+        "credentials": {
+          "instrumentationKey": "[parameters('applicationInsightsInstrumentationKey')]"
+        }
+      },
+      "dependsOn": [
+        "[resourceId('Microsoft.ApiManagement/service', parameters('apimServiceName'))]"
+      ]
+    },
+    {
+      "type": "Microsoft.ApiManagement/service/diagnostics",
+      "apiVersion": "2023-09-01-preview",
+      "name": "[format('{0}/{1}', parameters('apimServiceName'), 'applicationinsights')]",
+      "properties": {
+        "loggerId": "[resourceId('Microsoft.ApiManagement/service/loggers', parameters('apimServiceName'), 'appinsights-logger')]",
+        "alwaysLog": "allErrors",
+        "httpCorrelationProtocol": "W3C",
+        "logClientIp": true,
+        "sampling": {
+          "percentage": 100,
+          "samplingType": "fixed"
+        },
+        "frontend": {
+          "request": {
+            "headers": [
+              "x-ms-client-request-id"
+            ],
+            "body": {
+              "bytes": 8192
+            }
+          },
+          "response": {
+            "headers": [
+              "x-ms-request-id"
+            ],
+            "body": {
+              "bytes": 8192
+            }
+          }
+        },
+        "backend": {
+          "request": {
+            "headers": [
+              "x-ms-client-request-id"
+            ],
+            "body": {
+              "bytes": 8192
+            }
+          },
+          "response": {
+            "headers": [
+              "x-ms-request-id"
+            ],
+            "body": {
+              "bytes": 8192
+            }
+          }
+        }
+      },
+      "dependsOn": [
+        "[resourceId('Microsoft.ApiManagement/service/loggers', parameters('apimServiceName'), 'appinsights-logger')]",
+        "[resourceId('Microsoft.ApiManagement/service', parameters('apimServiceName'))]"
+      ]
+    },
+    {
+      "type": "Microsoft.Insights/diagnosticSettings",
+      "apiVersion": "2021-05-01-preview",
+      "scope": "[format('Microsoft.ApiManagement/service/{0}', parameters('apimServiceName'))]",
+      "name": "apim-diagnostics",
+      "properties": {
+        "workspaceId": "[parameters('logAnalyticsWorkspaceId')]",
+        "logs": [
+          {
+            "category": "GatewayLogs",
+            "enabled": true
+          },
+          {
+            "category": "WebSocketConnectionLogs",
+            "enabled": true
+          }
+        ],
+        "metrics": [
+          {
+            "category": "AllMetrics",
+            "enabled": true
+          }
+        ]
+      },
+      "dependsOn": [
+        "[resourceId('Microsoft.ApiManagement/service', parameters('apimServiceName'))]"
+      ]
+    },
+    {
+      "type": "Microsoft.ApiManagement/service/namedValues",
+      "apiVersion": "2023-09-01-preview",
+      "name": "[format('{0}/{1}', parameters('apimServiceName'), 'openai-backend-url')]",
+      "properties": {
+        "displayName": "openai-backend-url",
+        "value": "[parameters('openAiEndpoint')]",
+        "secret": false
+      },
+      "dependsOn": [
+        "[resourceId('Microsoft.ApiManagement/service', parameters('apimServiceName'))]"
+      ]
+    },
+    {
+      "type": "Microsoft.ApiManagement/service/backends",
+      "apiVersion": "2023-09-01-preview",
+      "name": "[format('{0}/{1}', parameters('apimServiceName'), 'openai-backend')]",
+      "properties": {
+        "title": "Azure OpenAI Backend",
+        "description": "Azure OpenAI Service with Managed Identity authentication",
+        "url": "[parameters('openAiEndpoint')]",
+        "protocol": "http",
+        "credentials": {
+          "header": {},
+          "query": {}
+        },
+        "tls": {
+          "validateCertificateChain": true,
+          "validateCertificateName": true
+        }
+      },
+      "dependsOn": [
+        "[resourceId('Microsoft.ApiManagement/service', parameters('apimServiceName'))]",
+        "[resourceId('Microsoft.ApiManagement/service/namedValues', parameters('apimServiceName'), 'openai-backend-url')]"
+      ]
+    },
+    {
+      "type": "Microsoft.ApiManagement/service/apis",
+      "apiVersion": "2023-09-01-preview",
+      "name": "[format('{0}/{1}', parameters('apimServiceName'), 'azure-openai')]",
+      "properties": {
+        "displayName": "Azure OpenAI Service API",
+        "description": "Azure OpenAI Service API with AI Gateway features",
+        "subscriptionRequired": true,
+        "path": "openai",
+        "protocols": [
+          "https"
+        ],
+        "serviceUrl": "[parameters('openAiEndpoint')]",
+        "apiType": "http",
+        "subscriptionKeyParameterNames": {
+          "header": "api-key",
+          "query": "api-key"
+        }
+      },
+      "dependsOn": [
+        "[resourceId('Microsoft.ApiManagement/service', parameters('apimServiceName'))]"
+      ]
+    },
+    {
+      "type": "Microsoft.ApiManagement/service/apis/operations",
+      "apiVersion": "2023-09-01-preview",
+      "name": "[format('{0}/{1}/{2}', parameters('apimServiceName'), 'azure-openai', 'chat-completions')]",
+      "properties": {
+        "displayName": "Create Chat Completion",
+        "method": "POST",
+        "urlTemplate": "/deployments/{deployment-id}/chat/completions",
+        "templateParameters": [
+          {
+            "name": "deployment-id",
+            "required": true,
+            "type": "string",
+            "description": "The deployment name (e.g., gpt-4o)"
+          }
+        ],
+        "request": {
+          "queryParameters": [
+            {
+              "name": "api-version",
+              "required": true,
+              "type": "string",
+              "defaultValue": "2024-02-15-preview"
+            }
+          ]
+        }
+      },
+      "dependsOn": [
+        "[resourceId('Microsoft.ApiManagement/service/apis', parameters('apimServiceName'), 'azure-openai')]"
+      ]
+    },
+    {
+      "type": "Microsoft.ApiManagement/service/apis/operations",
+      "apiVersion": "2023-09-01-preview",
+      "name": "[format('{0}/{1}/{2}', parameters('apimServiceName'), 'azure-openai', 'embeddings')]",
+      "properties": {
+        "displayName": "Create Embeddings",
+        "method": "POST",
+        "urlTemplate": "/deployments/{deployment-id}/embeddings",
+        "templateParameters": [
+          {
+            "name": "deployment-id",
+            "required": true,
+            "type": "string",
+            "description": "The deployment name (e.g., text-embedding-3-small)"
+          }
+        ],
+        "request": {
+          "queryParameters": [
+            {
+              "name": "api-version",
+              "required": true,
+              "type": "string",
+              "defaultValue": "2024-02-15-preview"
+            }
+          ]
+        }
+      },
+      "dependsOn": [
+        "[resourceId('Microsoft.ApiManagement/service/apis', parameters('apimServiceName'), 'azure-openai')]"
+      ]
+    },
+    {
+      "type": "Microsoft.ApiManagement/service/apis/operations",
+      "apiVersion": "2023-09-01-preview",
+      "name": "[format('{0}/{1}/{2}', parameters('apimServiceName'), 'azure-openai', 'completions')]",
+      "properties": {
+        "displayName": "Create Completion",
+        "method": "POST",
+        "urlTemplate": "/deployments/{deployment-id}/completions",
+        "templateParameters": [
+          {
+            "name": "deployment-id",
+            "required": true,
+            "type": "string",
+            "description": "The deployment name"
+          }
+        ],
+        "request": {
+          "queryParameters": [
+            {
+              "name": "api-version",
+              "required": true,
+              "type": "string",
+              "defaultValue": "2024-02-15-preview"
+            }
+          ]
+        }
+      },
+      "dependsOn": [
+        "[resourceId('Microsoft.ApiManagement/service/apis', parameters('apimServiceName'), 'azure-openai')]"
+      ]
+    },
+    {
+      "type": "Microsoft.ApiManagement/service/apis/policies",
+      "apiVersion": "2023-09-01-preview",
+      "name": "[format('{0}/{1}/{2}', parameters('apimServiceName'), 'azure-openai', 'policy')]",
+      "properties": {
+        "format": "xml",
+        "value": "<policies>\n    <inbound>\n        <base />\n        <!-- Remove any incoming api-key header to use managed identity -->\n        <set-header name=\"api-key\" exists-action=\"delete\" />\n        \n        <!-- Authenticate with Azure OpenAI using APIM managed identity -->\n        <authentication-managed-identity resource=\"https://cognitiveservices.azure.com\" output-token-variable-name=\"managed-id-access-token\" ignore-error=\"false\" />\n        <set-header name=\"Authorization\" exists-action=\"override\">\n            <value>@(\"Bearer \" + (string)context.Variables[\"managed-id-access-token\"])</value>\n        </set-header>\n        \n        <!-- Rate limiting by subscription - 60 requests per minute -->\n        <rate-limit-by-key calls=\"60\" renewal-period=\"60\" counter-key=\"@(context.Subscription != null ? context.Subscription.Key : context.Request.IpAddress)\" />\n        \n        <!-- Token quota (approximate) - 1000 calls per minute per subscription -->\n        <quota-by-key calls=\"1000\" bandwidth=\"102400\" renewal-period=\"60\" counter-key=\"@(context.Subscription != null ? context.Subscription.Key : context.Request.IpAddress)\" />\n        \n        <!-- Add correlation ID for tracing -->\n        <set-header name=\"x-ms-client-request-id\" exists-action=\"skip\">\n            <value>@(context.RequestId.ToString())</value>\n        </set-header>\n        \n        <!-- Log incoming request metadata -->\n        <trace source=\"AI Gateway\" severity=\"information\">\n            <message>@($\"Incoming request: {context.Request.Method} {context.Request.Url.Path}\")</message>\n            <metadata name=\"SubscriptionId\" value=\"@(context.Subscription != null ? context.Subscription.Id : String.Empty)\" />\n            <metadata name=\"ProductId\" value=\"@(context.Product != null ? context.Product.Id : String.Empty)\" />\n        </trace>\n    </inbound>\n    <backend>\n        <base />\n        <!-- Retry policy for transient failures and rate limits -->\n        <retry condition=\"@(context.Response.StatusCode == 429 || context.Response.StatusCode >= 500)\" count=\"3\" interval=\"1\" max-interval=\"10\" delta=\"1\" first-fast-retry=\"false\">\n            <forward-request buffer-request-body=\"true\" />\n        </retry>\n    </backend>\n    <outbound>\n        <base />\n        <!-- Extract and log token usage from response -->\n        <choose>\n            <when condition=\"@(context.Response.StatusCode == 200)\">\n                <set-variable name=\"response-body\" value=\"@(context.Response.Body.As&lt;JObject&gt;(preserveContent: true))\" />\n                <set-variable name=\"prompt-tokens\" value=\"@{\n                    var body = (JObject)context.Variables[&quot;response-body&quot;];\n                    return body?[&quot;usage&quot;]?[&quot;prompt_tokens&quot;]?.ToString() ?? &quot;0&quot;;\n                }\" />\n                <set-variable name=\"completion-tokens\" value=\"@{\n                    var body = (JObject)context.Variables[&quot;response-body&quot;];\n                    return body?[&quot;usage&quot;]?[&quot;completion_tokens&quot;]?.ToString() ?? &quot;0&quot;;\n                }\" />\n                <set-variable name=\"total-tokens\" value=\"@{\n                    var body = (JObject)context.Variables[&quot;response-body&quot;];\n                    return body?[&quot;usage&quot;]?[&quot;total_tokens&quot;]?.ToString() ?? &quot;0&quot;;\n                }\" />\n                <!-- Add token usage headers for client visibility -->\n                <set-header name=\"x-openai-prompt-tokens\" exists-action=\"override\">\n                    <value>@((string)context.Variables[\"prompt-tokens\"])</value>\n                </set-header>\n                <set-header name=\"x-openai-completion-tokens\" exists-action=\"override\">\n                    <value>@((string)context.Variables[\"completion-tokens\"])</value>\n                </set-header>\n                <set-header name=\"x-openai-total-tokens\" exists-action=\"override\">\n                    <value>@((string)context.Variables[\"total-tokens\"])</value>\n                </set-header>\n                <!-- Emit token metrics to Application Insights -->\n                <trace source=\"AI Gateway\" severity=\"information\">\n                    <message>Token Usage</message>\n                    <metadata name=\"PromptTokens\" value=\"@((string)context.Variables[&quot;prompt-tokens&quot;])\" />\n                    <metadata name=\"CompletionTokens\" value=\"@((string)context.Variables[&quot;completion-tokens&quot;])\" />\n                    <metadata name=\"TotalTokens\" value=\"@((string)context.Variables[&quot;total-tokens&quot;])\" />\n                    <metadata name=\"SubscriptionId\" value=\"@(context.Subscription != null ? context.Subscription.Id : String.Empty)\" />\n                    <metadata name=\"DeploymentId\" value=\"@(context.Request.MatchedParameters.ContainsKey(&quot;deployment-id&quot;) ? context.Request.MatchedParameters[&quot;deployment-id&quot;] : String.Empty)\" />\n                </trace>\n            </when>\n        </choose>\n        <!-- Add CORS headers -->\n        <set-header name=\"Access-Control-Allow-Origin\" exists-action=\"override\">\n            <value>*</value>\n        </set-header>\n    </outbound>\n    <on-error>\n        <base />\n        <!-- Log errors for troubleshooting -->\n        <trace source=\"AI Gateway\" severity=\"error\">\n            <message>@($\"Error: {context.LastError.Message}\")</message>\n            <metadata name=\"StatusCode\" value=\"@(context.Response.StatusCode.ToString())\" />\n            <metadata name=\"Reason\" value=\"@(context.LastError.Reason)\" />\n        </trace>\n        <!-- Return friendly error response -->\n        <choose>\n            <when condition=\"@(context.Response.StatusCode == 429)\">\n                <return-response>\n                    <set-status code=\"429\" reason=\"Too Many Requests\" />\n                    <set-header name=\"Retry-After\" exists-action=\"override\">\n                        <value>60</value>\n                    </set-header>\n                    <set-body>@{\n                        return new JObject(\n                            new JProperty(\"error\", new JObject(\n                                new JProperty(\"code\", \"RateLimitExceeded\"),\n                                new JProperty(\"message\", \"API rate limit exceeded. Please retry after 60 seconds.\")\n                            ))\n                        ).ToString();\n                    }</set-body>\n                </return-response>\n            </when>\n        </choose>\n    </on-error>\n</policies>\n"
+      },
+      "dependsOn": [
+        "[resourceId('Microsoft.ApiManagement/service/apis', parameters('apimServiceName'), 'azure-openai')]"
+      ]
+    },
+    {
+      "type": "Microsoft.ApiManagement/service/products",
+      "apiVersion": "2023-09-01-preview",
+      "name": "[format('{0}/{1}', parameters('apimServiceName'), 'ai-gateway')]",
+      "properties": {
+        "displayName": "AI Gateway",
+        "description": "Access to Azure OpenAI through the AI Gateway with rate limiting and token tracking",
+        "subscriptionRequired": true,
+        "approvalRequired": false,
+        "state": "published"
+      },
+      "dependsOn": [
+        "[resourceId('Microsoft.ApiManagement/service', parameters('apimServiceName'))]"
+      ]
+    },
+    {
+      "type": "Microsoft.ApiManagement/service/products/apis",
+      "apiVersion": "2023-09-01-preview",
+      "name": "[format('{0}/{1}/{2}', parameters('apimServiceName'), 'ai-gateway', 'azure-openai')]",
+      "dependsOn": [
+        "[resourceId('Microsoft.ApiManagement/service/products', parameters('apimServiceName'), 'ai-gateway')]",
+        "[resourceId('Microsoft.ApiManagement/service/apis', parameters('apimServiceName'), 'azure-openai')]"
+      ]
+    },
+    {
+      "type": "Microsoft.ApiManagement/service/subscriptions",
+      "apiVersion": "2023-09-01-preview",
+      "name": "[format('{0}/{1}', parameters('apimServiceName'), 'internal-apps')]",
+      "properties": {
+        "displayName": "Internal Applications",
+        "scope": "[format('/products/{0}', resourceId('Microsoft.ApiManagement/service/products', parameters('apimServiceName'), 'ai-gateway'))]",
+        "state": "active",
+        "allowTracing": true
+      },
+      "dependsOn": [
+        "[resourceId('Microsoft.ApiManagement/service/products', parameters('apimServiceName'), 'ai-gateway')]",
+        "[resourceId('Microsoft.ApiManagement/service', parameters('apimServiceName'))]"
+      ]
+    }
+  ],
+  "outputs": {
+    "apimServiceId": {
+      "type": "string",
+      "value": "[resourceId('Microsoft.ApiManagement/service', parameters('apimServiceName'))]"
+    },
+    "apimServiceName": {
+      "type": "string",
+      "value": "[parameters('apimServiceName')]"
+    },
+    "apimGatewayUrl": {
+      "type": "string",
+      "value": "[reference(resourceId('Microsoft.ApiManagement/service', parameters('apimServiceName')), '2023-09-01-preview').gatewayUrl]"
+    },
+    "apimIdentityPrincipalId": {
+      "type": "string",
+      "value": "[reference(resourceId('Microsoft.ApiManagement/service', parameters('apimServiceName')), '2023-09-01-preview', 'full').identity.principalId]"
+    },
+    "openAiApiId": {
+      "type": "string",
+      "value": "[resourceId('Microsoft.ApiManagement/service/apis', parameters('apimServiceName'), 'azure-openai')]"
+    },
+    "openAiApiPath": {
+      "type": "string",
+      "value": "[reference(resourceId('Microsoft.ApiManagement/service/apis', parameters('apimServiceName'), 'azure-openai'), '2023-09-01-preview').path]"
+    }
+  }
+}

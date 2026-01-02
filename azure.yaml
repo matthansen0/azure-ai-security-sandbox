@@ -52,4 +52,63 @@ hooks:
         echo "Front Door is disabled (USE_AFD=false). Skipping AFD configuration."
         echo "App is accessible directly at: $APP_PUBLIC_URL"
       fi
+      
+      # Run prepdocs from upstream submodule to populate search index
+      echo "Running prepdocs to populate search index..."
+      if [ -d "./upstream" ]; then
+        # Set up Python virtual environment if not exists
+        if [ ! -d "./.venv" ]; then
+          echo "Creating Python virtual environment..."
+          python3 -m venv .venv
+        fi
+        
+        # Install prepdocs dependencies
+        echo "Installing prepdocs dependencies..."
+        ./.venv/bin/pip install -q -r ./upstream/app/backend/requirements.txt
+        
+        # Run prepdocs with upstream data
+        echo "Indexing documents..."
+        ./.venv/bin/python ./upstream/app/backend/prepdocs.py './upstream/data/*' --verbose
+      else
+        echo "Warning: upstream submodule not found. Run 'git submodule update --init'"
+      fi
+
+  # Post-down: Purge soft-deleted resources to allow clean redeployment
+  postdown:
+    shell: sh
+    run: |
+      echo "Purging soft-deleted resources..."
+      
+      # Get subscription ID
+      SUBSCRIPTION_ID=$(az account show --query id -o tsv)
+      
+      # Purge soft-deleted Cognitive Services (Azure OpenAI)
+      echo "Checking for soft-deleted Cognitive Services..."
+      DELETED_COG=$(az cognitiveservices account list-deleted --subscription "$SUBSCRIPTION_ID" -o json 2>/dev/null)
+      if [ -n "$DELETED_COG" ] && [ "$DELETED_COG" != "[]" ]; then
+        echo "$DELETED_COG" | jq -r '.[] | "\(.name) \(.location)"' | while read -r NAME LOCATION; do
+          if [ -n "$NAME" ]; then
+            echo "Purging Cognitive Services: $NAME in $LOCATION"
+            az cognitiveservices account purge --name "$NAME" --location "$LOCATION" --subscription "$SUBSCRIPTION_ID" 2>/dev/null || true
+          fi
+        done
+      else
+        echo "No soft-deleted Cognitive Services found."
+      fi
+      
+      # Purge soft-deleted API Management services
+      echo "Checking for soft-deleted API Management services..."
+      DELETED_APIM=$(az apim deletedservice list --subscription "$SUBSCRIPTION_ID" -o json 2>/dev/null)
+      if [ -n "$DELETED_APIM" ] && [ "$DELETED_APIM" != "[]" ]; then
+        echo "$DELETED_APIM" | jq -r '.[] | "\(.name) \(.location)"' | while read -r NAME LOCATION; do
+          if [ -n "$NAME" ]; then
+            echo "Purging API Management: $NAME in $LOCATION"
+            az apim deletedservice purge --service-name "$NAME" --location "$LOCATION" --subscription "$SUBSCRIPTION_ID" 2>/dev/null || true
+          fi
+        done
+      else
+        echo "No soft-deleted API Management services found."
+      fi
+      
+      echo "Purge complete."
 

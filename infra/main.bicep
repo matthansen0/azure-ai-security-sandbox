@@ -32,7 +32,7 @@ param useAFD bool = true
 @description('Deploy Azure API Management as AI Gateway (set to false for faster iterations during development)')
 param useAPIM bool = true
 
-@description('API Management SKU - Developer for non-production, BasicV2/StandardV2 for production')
+@description('API Management SKU - BasicV2 provisions faster (~5 min), Developer is cheaper but slower (~30 min)')
 @allowed(['Developer', 'BasicV2', 'StandardV2'])
 param apimSku string = 'BasicV2'
 
@@ -53,18 +53,7 @@ resource rg 'Microsoft.Resources/resourceGroups@2024-03-01' = {
   tags: union(tags, { 'azd-env-name': environmentName })
 }
 
-// Container Registry for remote builds
-module containerRegistry 'modules/container-registry.bicep' = {
-  name: 'containerRegistry'
-  scope: rg
-  params: {
-    name: !empty(containerRegistryName) ? containerRegistryName : '${abbrs.containerRegistryRegistries}${resourceToken}'
-    location: location
-    tags: tags
-  }
-}
-
-// Monitoring (Log Analytics + App Insights)
+// Monitoring (Log Analytics + App Insights) - deployed first so other resources can reference it
 module monitoring 'modules/monitoring.bicep' = {
   name: 'monitoring'
   scope: rg
@@ -73,6 +62,18 @@ module monitoring 'modules/monitoring.bicep' = {
     tags: tags
     logAnalyticsName: '${abbrs.operationalInsightsWorkspaces}${resourceToken}'
     applicationInsightsName: '${abbrs.insightsComponents}${resourceToken}'
+  }
+}
+
+// Container Registry for remote builds
+module containerRegistry 'modules/container-registry.bicep' = {
+  name: 'containerRegistry'
+  scope: rg
+  params: {
+    name: !empty(containerRegistryName) ? containerRegistryName : '${abbrs.containerRegistryRegistries}${resourceToken}'
+    location: location
+    tags: tags
+    logAnalyticsWorkspaceId: monitoring.outputs.logAnalyticsWorkspaceId
   }
 }
 
@@ -115,52 +116,8 @@ module aiServices 'modules/ai-services.bicep' = {
   }
 }
 
-// Container Apps - Main RAG application
-module containerApps 'modules/container-apps.bicep' = {
-  name: 'containerApps'
-  scope: rg
-  params: {
-    location: location
-    tags: tags
-    containerAppsEnvName: '${abbrs.appManagedEnvironments}${resourceToken}'
-    containerAppName: '${abbrs.appContainerApps}${resourceToken}'
-    containerRegistryName: containerRegistry.outputs.name
-    containerRegistryLoginServer: containerRegistry.outputs.loginServer
-    imageName: backendImageName
-    resourceGroupName: rg.name
-    azureSubscriptionId: subscription().subscriptionId
-    applicationInsightsConnectionString: monitoring.outputs.applicationInsightsConnectionString
-    logAnalyticsWorkspaceId: monitoring.outputs.logAnalyticsWorkspaceId
-    openAiEndpoint: aiServices.outputs.openAiEndpoint
-    openAiDeploymentName: aiServices.outputs.chatDeploymentName
-    openAiEmbeddingDeploymentName: aiServices.outputs.embeddingDeploymentName
-    openAiAccountName: aiServices.outputs.openAiAccountName
-    searchEndpoint: aiServices.outputs.searchEndpoint
-    searchServiceName: aiServices.outputs.searchServiceName
-    searchIndexName: 'documents'
-    storageAccountName: storage.outputs.storageAccountName
-    storageBlobEndpoint: storage.outputs.blobEndpoint
-    cosmosDbEndpoint: cosmosDb.outputs.cosmosDbEndpoint
-    cosmosDbDatabaseName: cosmosDb.outputs.databaseName
-    cosmosDbContainerName: cosmosDb.outputs.containerName
-  }
-}
-
-// Azure Functions for document processing
-// Role assignments for Container App managed identity
-module containerAppRoleAssignments 'modules/role-assignments.bicep' = {
-  name: 'containerAppRoleAssignments'
-  scope: rg
-  params: {
-    principalId: containerApps.outputs.identityPrincipalId
-    openAiAccountName: aiServices.outputs.openAiAccountName
-    searchServiceName: aiServices.outputs.searchServiceName
-    storageAccountName: storage.outputs.storageAccountName
-    cosmosDbAccountName: cosmosDb.outputs.cosmosDbAccountName
-  }
-}
-
 // Azure API Management - AI Gateway (optional - can be disabled for faster dev iterations)
+// Deployed BEFORE Container Apps so the gateway URL can be passed to the app
 module apiManagement 'modules/api-management.bicep' = if (useAPIM) {
   name: 'apiManagement'
   scope: rg
@@ -189,6 +146,55 @@ module apimRoleAssignments 'modules/role-assignments.bicep' = if (useAPIM) {
   }
 }
 
+// Container Apps - Main RAG application
+// Note: When APIM is enabled, this module depends on APIM to route OpenAI traffic through the AI Gateway
+module containerApps 'modules/container-apps.bicep' = {
+  name: 'containerApps'
+  scope: rg
+  params: {
+    location: location
+    tags: tags
+    containerAppsEnvName: '${abbrs.appManagedEnvironments}${resourceToken}'
+    containerAppName: '${abbrs.appContainerApps}${resourceToken}'
+    containerRegistryName: containerRegistry.outputs.name
+    containerRegistryLoginServer: containerRegistry.outputs.loginServer
+    imageName: backendImageName
+    resourceGroupName: rg.name
+    azureSubscriptionId: subscription().subscriptionId
+    applicationInsightsConnectionString: monitoring.outputs.applicationInsightsConnectionString
+    logAnalyticsWorkspaceId: monitoring.outputs.logAnalyticsWorkspaceId
+    openAiEndpoint: aiServices.outputs.openAiEndpoint
+    openAiDeploymentName: aiServices.outputs.chatDeploymentName
+    openAiEmbeddingDeploymentName: aiServices.outputs.embeddingDeploymentName
+    openAiAccountName: aiServices.outputs.openAiAccountName
+    searchEndpoint: aiServices.outputs.searchEndpoint
+    searchServiceName: aiServices.outputs.searchServiceName
+    searchIndexName: 'documents'
+    storageAccountName: storage.outputs.storageAccountName
+    storageBlobEndpoint: storage.outputs.blobEndpoint
+    cosmosDbEndpoint: cosmosDb.outputs.cosmosDbEndpoint
+    cosmosDbDatabaseName: cosmosDb.outputs.databaseName
+    cosmosDbContainerName: cosmosDb.outputs.containerName
+    // AI Gateway routing: When APIM is enabled, route all OpenAI traffic through APIM
+    // Best practice: All Azure OpenAI access goes through APIM for rate limiting, token tracking, and observability
+    apimOpenAiEndpoint: useAPIM ? '${apiManagement.outputs.apimGatewayUrl}/${apiManagement.outputs.openAiApiPath}' : ''
+    apimSubscriptionKey: useAPIM ? apiManagement.outputs.internalSubscriptionKey : ''
+  }
+}
+
+// Role assignments for Container App managed identity
+module containerAppRoleAssignments 'modules/role-assignments.bicep' = {
+  name: 'containerAppRoleAssignments'
+  scope: rg
+  params: {
+    principalId: containerApps.outputs.identityPrincipalId
+    openAiAccountName: aiServices.outputs.openAiAccountName
+    searchServiceName: aiServices.outputs.searchServiceName
+    storageAccountName: storage.outputs.storageAccountName
+    cosmosDbAccountName: cosmosDb.outputs.cosmosDbAccountName
+  }
+}
+
 // Front Door with WAF (optional - can be disabled for faster dev iterations)
 module frontDoor 'modules/front-door.bicep' = if (useAFD) {
   name: 'frontDoor'
@@ -199,6 +205,7 @@ module frontDoor 'modules/front-door.bicep' = if (useAFD) {
     frontDoorEndpointName: 'ep-${resourceToken}'
     wafPolicyName: 'waf${resourceToken}'
     originHostName: containerApps.outputs.containerAppFqdn
+    logAnalyticsWorkspaceId: monitoring.outputs.logAnalyticsWorkspaceId
   }
 }
 
@@ -256,7 +263,12 @@ output AZURE_STORAGE_BLOB_ENDPOINT string = storage.outputs.blobEndpoint
 
 // Cosmos DB outputs
 output AZURE_COSMOSDB_ENDPOINT string = cosmosDb.outputs.cosmosDbEndpoint
+
 // API Management outputs (only when APIM is enabled)
 output APIM_GATEWAY_URL string = useAPIM ? apiManagement.outputs.apimGatewayUrl : ''
 output APIM_SERVICE_NAME string = useAPIM ? apiManagement.outputs.apimServiceName : ''
 output AZURE_OPENAI_VIA_APIM string = useAPIM ? '${apiManagement.outputs.apimGatewayUrl}/${apiManagement.outputs.openAiApiPath}' : ''
+
+// AI Gateway routing status - indicates if Container App routes through APIM
+output AI_GATEWAY_ENABLED bool = useAPIM
+output CONTAINER_APP_OPENAI_ENDPOINT string = containerApps.outputs.configuredOpenAiEndpoint

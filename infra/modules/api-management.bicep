@@ -11,7 +11,7 @@ param logAnalyticsWorkspaceId string
 param applicationInsightsId string
 param applicationInsightsInstrumentationKey string
 
-@description('APIM SKU - Use Developer for non-production, BasicV2/StandardV2 for production')
+@description('APIM SKU - BasicV2 provisions faster (~5 min), Developer is cheaper but slower (~30 min)')
 @allowed(['Developer', 'BasicV2', 'StandardV2'])
 param skuName string = 'BasicV2'
 
@@ -148,7 +148,8 @@ resource openAiBackend 'Microsoft.ApiManagement/service/backends@2023-09-01-prev
   properties: {
     title: 'Azure OpenAI Backend'
     description: 'Azure OpenAI Service with Managed Identity authentication'
-    url: openAiEndpoint
+    // Include /openai path segment for correct routing
+    url: '${openAiEndpoint}openai'
     protocol: 'http'
     credentials: {
       header: {}
@@ -172,7 +173,8 @@ resource openAiApi 'Microsoft.ApiManagement/service/apis@2023-09-01-preview' = {
     subscriptionRequired: true
     path: 'openai'
     protocols: ['https']
-    serviceUrl: openAiEndpoint
+    // Include /openai in service URL since APIM strips the API path prefix
+    serviceUrl: '${openAiEndpoint}openai'
     apiType: 'http'
     subscriptionKeyParameterNames: {
       header: 'api-key'
@@ -288,11 +290,11 @@ resource openAiApiPolicy 'Microsoft.ApiManagement/service/apis/policies@2023-09-
             <value>@("Bearer " + (string)context.Variables["managed-id-access-token"])</value>
         </set-header>
         
-        <!-- Rate limiting by subscription -->
-        <rate-limit-by-key calls="60" renewal-period="60" counter-key="@(context.Subscription?.Key ?? "anonymous")" />
+        <!-- Rate limiting by subscription - 60 requests per minute -->
+        <rate-limit-by-key calls="60" renewal-period="60" counter-key="@(context.Subscription != null ? context.Subscription.Key : context.Request.IpAddress)" />
         
-        <!-- Token quota (approximate) - 100K tokens per minute per subscription -->
-        <quota-by-key calls="1000" bandwidth="102400" renewal-period="60" counter-key="@(context.Subscription?.Key ?? "anonymous")" />
+        <!-- Token quota (approximate) - 10000 calls per 5 minutes per subscription -->
+        <quota-by-key calls="10000" bandwidth="1024000" renewal-period="300" counter-key="@(context.Subscription != null ? context.Subscription.Key : context.Request.IpAddress)" />
         
         <!-- Add correlation ID for tracing -->
         <set-header name="x-ms-client-request-id" exists-action="skip">
@@ -302,12 +304,11 @@ resource openAiApiPolicy 'Microsoft.ApiManagement/service/apis/policies@2023-09-
         <!-- Log incoming request metadata -->
         <trace source="AI Gateway" severity="information">
             <message>@($"Incoming request: {context.Request.Method} {context.Request.Url.Path}")</message>
-            <metadata name="SubscriptionId" value="@(context.Subscription?.Id ?? "none")" />
-            <metadata name="ProductId" value="@(context.Product?.Id ?? "none")" />
+            <metadata name="SubscriptionId" value="@(context.Subscription != null ? context.Subscription.Id : String.Empty)" />
+            <metadata name="ProductId" value="@(context.Product != null ? context.Product.Id : String.Empty)" />
         </trace>
     </inbound>
     <backend>
-        <base />
         <!-- Retry policy for transient failures and rate limits -->
         <retry condition="@(context.Response.StatusCode == 429 || context.Response.StatusCode >= 500)" count="3" interval="1" max-interval="10" delta="1" first-fast-retry="false">
             <forward-request buffer-request-body="true" />
@@ -318,18 +319,18 @@ resource openAiApiPolicy 'Microsoft.ApiManagement/service/apis/policies@2023-09-
         <!-- Extract and log token usage from response -->
         <choose>
             <when condition="@(context.Response.StatusCode == 200)">
-                <set-variable name="response-body" value="@(context.Response.Body.As<JObject>(preserveContent: true))" />
+                <set-variable name="response-body" value="@(context.Response.Body.As&lt;JObject&gt;(preserveContent: true))" />
                 <set-variable name="prompt-tokens" value="@{
-                    var body = (JObject)context.Variables["response-body"];
-                    return body?["usage"]?["prompt_tokens"]?.ToString() ?? "0";
+                    var body = (JObject)context.Variables[&quot;response-body&quot;];
+                    return body?[&quot;usage&quot;]?[&quot;prompt_tokens&quot;]?.ToString() ?? &quot;0&quot;;
                 }" />
                 <set-variable name="completion-tokens" value="@{
-                    var body = (JObject)context.Variables["response-body"];
-                    return body?["usage"]?["completion_tokens"]?.ToString() ?? "0";
+                    var body = (JObject)context.Variables[&quot;response-body&quot;];
+                    return body?[&quot;usage&quot;]?[&quot;completion_tokens&quot;]?.ToString() ?? &quot;0&quot;;
                 }" />
                 <set-variable name="total-tokens" value="@{
-                    var body = (JObject)context.Variables["response-body"];
-                    return body?["usage"]?["total_tokens"]?.ToString() ?? "0";
+                    var body = (JObject)context.Variables[&quot;response-body&quot;];
+                    return body?[&quot;usage&quot;]?[&quot;total_tokens&quot;]?.ToString() ?? &quot;0&quot;;
                 }" />
                 <!-- Add token usage headers for client visibility -->
                 <set-header name="x-openai-prompt-tokens" exists-action="override">
@@ -344,11 +345,11 @@ resource openAiApiPolicy 'Microsoft.ApiManagement/service/apis/policies@2023-09-
                 <!-- Emit token metrics to Application Insights -->
                 <trace source="AI Gateway" severity="information">
                     <message>Token Usage</message>
-                    <metadata name="PromptTokens" value="@((string)context.Variables["prompt-tokens"])" />
-                    <metadata name="CompletionTokens" value="@((string)context.Variables["completion-tokens"])" />
-                    <metadata name="TotalTokens" value="@((string)context.Variables["total-tokens"])" />
-                    <metadata name="SubscriptionId" value="@(context.Subscription?.Id ?? "none")" />
-                    <metadata name="DeploymentId" value="@(context.Request.MatchedParameters["deployment-id"])" />
+                    <metadata name="PromptTokens" value="@((string)context.Variables[&quot;prompt-tokens&quot;])" />
+                    <metadata name="CompletionTokens" value="@((string)context.Variables[&quot;completion-tokens&quot;])" />
+                    <metadata name="TotalTokens" value="@((string)context.Variables[&quot;total-tokens&quot;])" />
+                    <metadata name="SubscriptionId" value="@(context.Subscription != null ? context.Subscription.Id : String.Empty)" />
+                    <metadata name="DeploymentId" value="@(context.Request.MatchedParameters.ContainsKey(&quot;deployment-id&quot;) ? context.Request.MatchedParameters[&quot;deployment-id&quot;] : String.Empty)" />
                 </trace>
             </when>
         </choose>
@@ -428,3 +429,7 @@ output apimGatewayUrl string = apimService.properties.gatewayUrl
 output apimIdentityPrincipalId string = apimService.identity.principalId
 output openAiApiId string = openAiApi.id
 output openAiApiPath string = openAiApi.properties.path
+
+// Output subscription key for internal apps (Container Apps authentication to APIM)
+// Best practice: Use subscription keys for APIM authentication, APIM uses managed identity to Azure OpenAI
+output internalSubscriptionKey string = internalSubscription.listSecrets().primaryKey

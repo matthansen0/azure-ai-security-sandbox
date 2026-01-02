@@ -188,6 +188,17 @@ az cognitiveservices account purge --name <name> --resource-group <rg> --locatio
 azd up
 ```
 
+#### Soft-Deleted API Management Service
+
+Azure API Management has **soft-delete** with 48-hour retention. Service names are globally unique, so if you delete and redeploy with the same name, you may see conflicts.
+
+**Fix:** Purge the soft-deleted APIM service first:
+```bash
+az apim deletedservice list --subscription <subscription-id>
+az apim deletedservice purge --service-name <name> --location <location>
+azd up
+```
+
 #### Subscription-Level Deployment Conflicts
 
 If you see `InvalidDeploymentLocation` errors when switching regions, delete the stale deployment record:
@@ -220,8 +231,9 @@ az login
 5. **Azure Storage** for document blobs
 6. **Azure Cosmos DB** for chat history
 7. **Azure Container Apps** running the RAG application (cloned from upstream and built in ACR at deploy time)
-8. **Azure Front Door + WAF** for edge protection (set `useAFD=false` to skip)
-9. **Microsoft Defender** for Storage; subscription-level Defender for App Services and Cosmos DB remain opt-in
+8. **Azure API Management** as AI Gateway for rate limiting, token tracking, and managed identity auth (set `useAPIM=false` to skip)
+9. **Azure Front Door + WAF** for edge protection (WAF defaults to Detection mode, set `useAFD=false` to skip)
+10. **Microsoft Defender** for Storage; subscription-level Defender for App Services and Cosmos DB remain opt-in
 
 ### Access the Application
 
@@ -235,6 +247,8 @@ https://<your-frontdoor-endpoint>.azurefd.net
 
 ```
 azure-ai-security-sandbox/
+├── .github/
+│   └── copilot-instructions.md # → symlink to AGENTS.md
 ├── app/                        # Application build assets
 │   └── backend/               # Dockerfile only (clones upstream at build time)
 │       └── Dockerfile
@@ -253,6 +267,7 @@ azure-ai-security-sandbox/
 │       ├── storage.bicep      # Storage account
 │       └── subscription-security.bicep # Subscription-level Defender
 ├── docs/                       # Documentation
+├── AGENTS.md                   # Instructions for AI coding agents
 ├── azure.yaml                  # Azure Developer CLI configuration
 ├── deploy.sh                   # Bash deployment script
 ├── cleanup.sh                  # Resource cleanup script
@@ -286,8 +301,10 @@ azure-ai-security-sandbox/
 
 ### With azd (Recommended)
 ```bash
-azd down
+azd down --force --purge
 ```
+
+The `--purge` flag triggers a `postdown` hook that automatically purges soft-deleted Cognitive Services and APIM resources, preventing conflicts on future deployments.
 
 ### With Bash Script
 ```bash

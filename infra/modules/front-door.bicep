@@ -5,6 +5,7 @@ param frontDoorProfileName string
 param frontDoorEndpointName string
 param wafPolicyName string
 param originHostName string
+param logAnalyticsWorkspaceId string = ''
 
 // Front Door Premium Profile (required for WAF)
 resource frontDoorProfile 'Microsoft.Cdn/profiles@2024-02-01' = {
@@ -19,6 +20,10 @@ resource frontDoorProfile 'Microsoft.Cdn/profiles@2024-02-01' = {
   }
 }
 
+@description('WAF mode - Detection for testing/development, Prevention for production')
+@allowed(['Detection', 'Prevention'])
+param wafMode string = 'Detection'
+
 // WAF Policy
 resource wafPolicy 'Microsoft.Network/FrontDoorWebApplicationFirewallPolicies@2024-02-01' = {
   name: wafPolicyName
@@ -30,7 +35,7 @@ resource wafPolicy 'Microsoft.Network/FrontDoorWebApplicationFirewallPolicies@20
   properties: {
     policySettings: {
       enabledState: 'Enabled'
-      mode: 'Prevention'
+      mode: wafMode
       requestBodyCheck: 'Enabled'
       customBlockResponseStatusCode: 403
     }
@@ -143,6 +148,35 @@ resource securityPolicy 'Microsoft.Cdn/profiles/securityPolicies@2024-02-01' = {
 // App Service access restriction (only allow Front Door)
 // This is handled via a separate module call to avoid circular dependencies
 // The app service needs to be configured to only accept traffic from Front Door
+
+// Diagnostic settings for Front Door
+resource frontDoorDiagnostics 'Microsoft.Insights/diagnosticSettings@2021-05-01-preview' = if (!empty(logAnalyticsWorkspaceId)) {
+  name: 'frontdoor-diagnostics'
+  scope: frontDoorProfile
+  properties: {
+    workspaceId: logAnalyticsWorkspaceId
+    logs: [
+      {
+        category: 'FrontDoorAccessLog'
+        enabled: true
+      }
+      {
+        category: 'FrontDoorHealthProbeLog'
+        enabled: true
+      }
+      {
+        category: 'FrontDoorWebApplicationFirewallLog'
+        enabled: true
+      }
+    ]
+    metrics: [
+      {
+        category: 'AllMetrics'
+        enabled: true
+      }
+    ]
+  }
+}
 
 output frontDoorProfileId string = frontDoorProfile.id
 output frontDoorProfileName string = frontDoorProfile.name

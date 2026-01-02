@@ -30,8 +30,22 @@ param cosmosDbEndpoint string
 param cosmosDbDatabaseName string
 param cosmosDbContainerName string
 
-// Keys and defaults
-var openAiKey = listKeys(resourceId('Microsoft.CognitiveServices/accounts', openAiAccountName), '2024-04-01-preview').key1
+// AI Gateway (APIM) parameters - optional, when provided routes OpenAI traffic through APIM
+@description('APIM Gateway URL for AI Gateway routing (e.g., https://apim-xxx.azure-api.net/openai)')
+param apimOpenAiEndpoint string = ''
+
+@description('APIM subscription key for AI Gateway authentication')
+@secure()
+param apimSubscriptionKey string = ''
+
+// Determine if APIM routing is enabled
+var useApimGateway = !empty(apimOpenAiEndpoint) && !empty(apimSubscriptionKey)
+
+// Use APIM endpoint when available, otherwise direct Azure OpenAI
+var resolvedOpenAiEndpoint = useApimGateway ? apimOpenAiEndpoint : openAiEndpoint
+
+// Keys and defaults - only retrieve OpenAI key if not using APIM
+var openAiKey = useApimGateway ? '' : listKeys(resourceId('Microsoft.CognitiveServices/accounts', openAiAccountName), '2024-04-01-preview').key1
 var searchAdminKey = listAdminKeys(resourceId('Microsoft.Search/searchServices', searchServiceName), '2024-03-01-preview').primaryKey
 var resolvedSearchIndexName = !empty(trim(searchIndexName)) ? searchIndexName : 'gptkbindex'
 var storageContainer = 'content'
@@ -101,7 +115,8 @@ resource containerApp 'Microsoft.App/containerApps@2024-03-01' = {
         }
         {
           name: 'openai-api-key'
-          value: openAiKey
+          // When using APIM Gateway, use APIM subscription key; otherwise use direct OpenAI key
+          value: useApimGateway ? apimSubscriptionKey : openAiKey
         }
         {
           name: 'search-api-key'
@@ -149,7 +164,8 @@ resource containerApp 'Microsoft.App/containerApps@2024-03-01' = {
             }
             {
               name: 'AZURE_OPENAI_ENDPOINT'
-              value: openAiEndpoint
+              // Route through APIM AI Gateway when enabled, otherwise direct to Azure OpenAI
+              value: resolvedOpenAiEndpoint
             }
             {
               name: 'AZURE_OPENAI_CHAT_DEPLOYMENT'
@@ -303,3 +319,5 @@ output containerAppName string = containerApp.name
 output containerAppFqdn string = containerApp.properties.configuration.ingress.fqdn
 output identityPrincipalId string = containerApp.identity.principalId
 output imageName string = containerImage
+output usesApimGateway bool = useApimGateway
+output configuredOpenAiEndpoint string = resolvedOpenAiEndpoint
