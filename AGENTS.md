@@ -160,6 +160,7 @@ When adding new security features:
 ## Related Documentation
 
 - [README.md](README.md) - User-facing documentation
+- [HOW_IT_WORKS.md](HOW_IT_WORKS.md) - Deep dive into every component and why
 - [EXECUTIVE_SUMMARY.md](EXECUTIVE_SUMMARY.md) - Business justification
 - [CAIRA_ASSESSMENT.md](CAIRA_ASSESSMENT.md) - Security risk assessment
 - [MIGRATION_GUIDE.md](MIGRATION_GUIDE.md) - Moving from demo to production

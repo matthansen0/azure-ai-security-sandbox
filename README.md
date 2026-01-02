@@ -17,6 +17,8 @@
 - [Contributing](#-contributing)
 - [License](#-license)
 
+> **📖 Want to understand what you deployed?** Read [HOW_IT_WORKS.md](HOW_IT_WORKS.md) for a detailed walkthrough of every component, why we chose these configurations, and what you should know before going to production.
+
 ## ✨ Overview
 
 A self-contained Azure AI security demonstration platform featuring a RAG (Retrieval-Augmented Generation) chat application with enterprise-grade security controls. This project deploys everything from scratch using Bicep, pulls the [azure-search-openai-demo](https://github.com/Azure-Samples/azure-search-openai-demo) app from upstream at build time, builds it in Azure Container Registry, and deploys to Azure Container Apps with optional Azure Front Door + WAF. **No application code is stored in this repo**—only infrastructure and a minimal Dockerfile.
@@ -308,6 +310,7 @@ azure-ai-security-sandbox/
 ├── app/                        # Application build assets
 │   └── backend/               # Dockerfile only (clones upstream at build time)
 │       └── Dockerfile
+├── docs/                       # Documentation
 ├── infra/                      # Bicep infrastructure
 │   ├── main.bicep             # Main orchestration
 │   ├── main.parameters.json   # Default parameters
@@ -324,6 +327,7 @@ azure-ai-security-sandbox/
 │       └── subscription-security.bicep # Subscription-level Defender
 ├── docs/                       # Documentation
 ├── AGENTS.md                   # Instructions for AI coding agents
+├── HOW_IT_WORKS.md             # Deep dive into what got deployed and why
 ├── azure.yaml                  # Azure Developer CLI configuration
 ├── deploy.sh                   # Bash deployment script
 ├── cleanup.sh                  # Resource cleanup script
