@@ -112,9 +112,22 @@ Set via `azd env set <KEY> <VALUE>`:
 |----------|---------|---------|
 | `AZURE_LOCATION` | (required) | Deployment region |
 | `AZURE_ENV_NAME` | (required) | Environment name prefix |
+| `AZURE_PRINCIPAL_ID` | (auto) | Deploying user's Object ID (set by azd) |
+| `AZURE_PRINCIPAL_TYPE` | `User` | `User` for interactive, `ServicePrincipal` for CI/CD |
 | `USE_APIM` | `true` | Enable AI Gateway |
 | `APIM_SKU` | `BasicV2` | APIM SKU (BasicV2, StandardV2) |
 | `WAF_MODE` | `Detection` | WAF mode (Detection, Prevention) |
+
+## RBAC Architecture
+
+The deployment creates role assignments for TWO principals:
+1. **Container App managed identity** - Runtime access (OpenAI, Search, Storage, Cosmos)
+2. **Deploying user** - Prepdocs access (uploads blobs, creates search indexes)
+
+This dual-assignment pattern ensures:
+- The app runs with least-privilege managed identity
+- The postprovision hook can populate the search index
+- Works from Cloud Shell, Codespaces, or local VS Code
 
 ## Adding New Security Controls
 

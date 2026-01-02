@@ -11,6 +11,12 @@
     "openAiLocation": {
       "value": "${AZURE_OPENAI_LOCATION=eastus2}"
     },
+    "principalId": {
+      "value": "${AZURE_PRINCIPAL_ID}"
+    },
+    "principalType": {
+      "value": "${AZURE_PRINCIPAL_TYPE=User}"
+    },
     "enableDefenderForAppServices": {
       "value": true
     },

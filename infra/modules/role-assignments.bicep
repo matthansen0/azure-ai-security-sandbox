@@ -1,6 +1,11 @@
-// role-assignments.bicep - RBAC role assignments for managed identity
+// role-assignments.bicep - RBAC role assignments for managed identity or deploying user
 
 param principalId string
+
+@description('Type of principal - ServicePrincipal for managed identity, User for interactive deployments')
+@allowed(['ServicePrincipal', 'User'])
+param principalType string = 'ServicePrincipal'
+
 param openAiAccountName string
 param searchServiceName string
 param storageAccountName string
@@ -37,7 +42,7 @@ resource openAiRoleAssignment 'Microsoft.Authorization/roleAssignments@2022-04-0
   properties: {
     roleDefinitionId: cognitiveServicesOpenAIUserRole
     principalId: principalId
-    principalType: 'ServicePrincipal'
+    principalType: principalType
   }
 }
 
@@ -48,7 +53,7 @@ resource searchIndexRoleAssignment 'Microsoft.Authorization/roleAssignments@2022
   properties: {
     roleDefinitionId: searchIndexDataContributorRole
     principalId: principalId
-    principalType: 'ServicePrincipal'
+    principalType: principalType
   }
 }
 
@@ -59,7 +64,7 @@ resource searchServiceRoleAssignment 'Microsoft.Authorization/roleAssignments@20
   properties: {
     roleDefinitionId: searchServiceContributorRole
     principalId: principalId
-    principalType: 'ServicePrincipal'
+    principalType: principalType
   }
 }
 
@@ -70,12 +75,13 @@ resource storageRoleAssignment 'Microsoft.Authorization/roleAssignments@2022-04-
   properties: {
     roleDefinitionId: storageBlobDataContributorRole
     principalId: principalId
-    principalType: 'ServicePrincipal'
+    principalType: principalType
   }
 }
 
 // Cosmos DB - Data Contributor (built-in role)
 // Note: Cosmos DB uses its own RBAC system, this creates a SQL role assignment
+// principalType is not used here as Cosmos DB RBAC handles both Users and ServicePrincipals the same way
 resource cosmosDbSqlRoleAssignment 'Microsoft.DocumentDB/databaseAccounts/sqlRoleAssignments@2024-05-15' = {
   parent: cosmosDbAccount
   name: guid(cosmosDbAccount.id, principalId, 'cosmos-data-contributor')

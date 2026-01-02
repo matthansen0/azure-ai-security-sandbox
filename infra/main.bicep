@@ -42,6 +42,13 @@ param containerRegistryName string = ''
 @description('Backend service container image name (set by azd deploy)')
 param backendImageName string = ''
 
+@description('Id of the user or app running the deployment (used for prepdocs RBAC)')
+param principalId string = ''
+
+@description('Type of principal (User for interactive deployments, ServicePrincipal for CI/CD)')
+@allowed(['User', 'ServicePrincipal'])
+param principalType string = 'User'
+
 // Generate unique suffix for globally unique resource names
 var resourceToken = toLower(uniqueString(subscription().id, environmentName, location))
 var abbrs = loadJsonContent('abbreviations.json')
@@ -188,6 +195,21 @@ module containerAppRoleAssignments 'modules/role-assignments.bicep' = {
   scope: rg
   params: {
     principalId: containerApps.outputs.identityPrincipalId
+    principalType: 'ServicePrincipal'
+    openAiAccountName: aiServices.outputs.openAiAccountName
+    searchServiceName: aiServices.outputs.searchServiceName
+    storageAccountName: storage.outputs.storageAccountName
+    cosmosDbAccountName: cosmosDb.outputs.cosmosDbAccountName
+  }
+}
+
+// Role assignments for deploying user (needed for prepdocs to upload blobs and create indexes)
+module deployingUserRoleAssignments 'modules/role-assignments.bicep' = if (!empty(principalId)) {
+  name: 'deployingUserRoleAssignments'
+  scope: rg
+  params: {
+    principalId: principalId
+    principalType: principalType
     openAiAccountName: aiServices.outputs.openAiAccountName
     searchServiceName: aiServices.outputs.searchServiceName
     storageAccountName: storage.outputs.storageAccountName
