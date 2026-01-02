@@ -224,11 +224,14 @@ When adding new security features:
 | APIM soft-delete conflict | `az apim deletedservice purge --location <loc> --service-name <name>` |
 | Cognitive Services conflict | `az cognitiveservices account purge --location <loc> --name <name> -g <rg>` |
 | Container not starting | Check ACR image exists, check Container Apps logs |
+| `openai.AuthenticationError` | APIM enabled but `OPENAI_HOST` not set to `azure_custom` - redeploy with latest `container-apps.bicep` |
 | `openai.NotFoundError` | See "APIM + OpenAI SDK Integration" section below |
 
 ## APIM + OpenAI SDK Integration (Critical!)
 
-> **⚠️ KNOWN ISSUE (as of Jan 2026):** The APIM URL rewrite operation for OpenAI SDK-style requests (`/chat/completions`) is **documented but NOT YET IMPLEMENTED** in `api-management.bicep`. The next task is to add an operation that handles `/chat/completions` and rewrites it to `/deployments/{model}/chat/completions`. See the policy example below.
+> **✅ FIXED (Jan 2026):** The Container App now correctly sets `OPENAI_HOST=azure_custom` and `AZURE_OPENAI_CUSTOM_URL` when APIM is enabled. The app uses `AsyncAzureOpenAI` client which constructs Azure-style URLs (`/deployments/{name}/chat/completions`), so APIM routes correctly without needing URL rewrite policies.
+>
+> **⚠️ STILL PENDING:** If you want to support generic OpenAI SDK clients that send `/chat/completions` (without deployment in path), you'd need to add an APIM operation with URL rewrite policy. This is NOT required for the current implementation.
 
 This section documents non-obvious behavior when routing OpenAI SDK requests through APIM.
 
@@ -251,13 +254,13 @@ POST {endpoint}/openai/deployments/{deployment}/chat/completions?api-version=202
 
 ### Container App Environment Variables for APIM
 
-When `useAPIM=true`, the Container App needs these env vars:
+When `useAPIM=true`, `container-apps.bicep` **automatically configures** these env vars:
 
 | Variable | Value | Purpose |
 |----------|-------|---------|
-| `OPENAI_HOST` | `azure_custom` | Tells app to use custom URL |
-| `AZURE_OPENAI_CUSTOM_URL` | `https://apim-xxx.azure-api.net/openai` | APIM gateway URL (NO trailing `/v1`) |
-| `AZURE_OPENAI_API_KEY_OVERRIDE` | APIM subscription key | Authentication to APIM |
+| `OPENAI_HOST` | `azure_custom` | Tells app to use custom URL (auto-set) |
+| `AZURE_OPENAI_CUSTOM_URL` | `https://apim-xxx.azure-api.net/openai` | APIM gateway URL (auto-set, NO `/v1`) |
+| `AZURE_OPENAI_API_KEY_OVERRIDE` | APIM subscription key | Authentication to APIM (auto-set from secret) |
 
 **Common mistakes:**
 - ❌ `https://apim.../openai/openai` - duplicate path segment
@@ -337,10 +340,11 @@ Container App                    APIM                         Azure OpenAI
 
 | Error | Cause | Fix |
 |-------|-------|-----|
-| `NotFoundError` from OpenAI SDK | URL path wrong or APIM can't route | Check `AZURE_OPENAI_CUSTOM_URL`, verify APIM policy |
+| `AuthenticationError` | `OPENAI_HOST` not set to `azure_custom` when APIM enabled | Run `azd provision` to update Container App with correct env vars |
+| `NotFoundError` from OpenAI SDK | URL path wrong or APIM can't route | Check `AZURE_OPENAI_CUSTOM_URL` is set correctly |
 | `DeploymentNotFound` | Wrong deployment name | Check `AZURE_OPENAI_CHAT_DEPLOYMENT` matches actual deployment |
 | 401 Unauthorized | APIM managed identity missing role | Add "Cognitive Services OpenAI User" role to APIM identity |
-| 404 from APIM | No matching operation/route | APIM needs operation for `/chat/completions` with URL rewrite |
+| 404 from APIM | No matching operation/route | Verify APIM has `openai` API with correct backend |
 | `"Using Azure credential"` in logs | `AZURE_OPENAI_API_KEY_OVERRIDE` empty/missing | Check secret reference in Container App |
 
 ## Related Documentation
