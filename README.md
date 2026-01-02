@@ -186,9 +186,6 @@ azd up --parameter useAFD=false
 # Disable Azure API Management (AI Gateway)
 azd up --parameter useAPIM=false
 
-# Use Developer SKU for APIM (cheaper for non-production)
-azd up --parameter apimSku=Developer
-
 # Keep Defender for App Services and Cosmos DB opt-in (defaults are false)
 azd up --parameter enableDefenderForAppServices=false --parameter enableDefenderForCosmosDb=false
 ```
@@ -270,14 +267,13 @@ Estimated costs for running the sandbox (low/dev usage). Actual costs vary based
 | Configuration | Daily | Monthly |
 |--------------|-------|---------|
 | **Full deployment** (BasicV2 APIM + AFD) | ~$11-12 | ~$320-350 |
-| **Developer APIM + AFD** | ~$7-8 | ~$200-230 |
 | **No APIM, No AFD** (fastest iteration) | ~$3-4 | ~$95-120 |
 
 **Cost breakdown by resource:**
 
 | Resource | Monthly Cost | Notes |
 |----------|-------------|-------|
-| API Management (BasicV2) | ~$180 | Use `Developer` SKU for ~$50 |
+| API Management (BasicV2) | ~$180 | Use `useAPIM=false` to skip |
 | Front Door Premium + WAF | ~$45 | Base + WAF policy |
 | AI Search (Basic) | ~$75 | Fixed tier cost |
 | Azure OpenAI | ~$5-20 | Pay per token (GPT-4o + embeddings) |
@@ -288,9 +284,8 @@ Estimated costs for running the sandbox (low/dev usage). Actual costs vary based
 | Log Analytics + App Insights | ~$5-10 | Pay per GB ingested |
 
 > **💡 Cost-saving tips:**
-> - Use `--parameter apimSku=Developer` for non-production (~$130/mo savings)
 > - Use `--parameter useAFD=false` to skip Front Door during development (~$45/mo savings)
-> - Use `--parameter useAPIM=false` to skip APIM for local testing (~$50-180/mo savings)
+> - Use `--parameter useAPIM=false` to skip APIM for local testing (~$180/mo savings)
 > - Remember to `azd down --force --purge` when not using the environment
 
 ### Access the Application

@@ -32,8 +32,8 @@ param useAFD bool = true
 @description('Deploy Azure API Management as AI Gateway (set to false for faster iterations during development)')
 param useAPIM bool = true
 
-@description('API Management SKU - BasicV2 provisions faster (~5 min), Developer is cheaper but slower (~30 min)')
-@allowed(['Developer', 'BasicV2', 'StandardV2'])
+@description('API Management SKU')
+@allowed(['BasicV2', 'StandardV2'])
 param apimSku string = 'BasicV2'
 
 @description('Container Registry name (optional - auto-generated if not provided)')

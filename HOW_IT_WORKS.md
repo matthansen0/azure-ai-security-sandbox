@@ -111,12 +111,12 @@ This is where it gets interesting for AI specifically.
 
 APIM solves all of this by sitting between your app and Azure OpenAI.
 
-**BasicV2 SKU (not Developer or Consumption):**
-- **Developer** (~$50/mo) - Cheaper but takes 30+ minutes to provision. Good for cost-sensitive sandboxes.
+**BasicV2 SKU (not Consumption):**
 - **BasicV2** (~$180/mo) - Provisions in 5-10 minutes, has all features we need.
+- **StandardV2** (~$360/mo) - More capacity, same features.
 - **Consumption** - Cheapest per-call pricing but missing features (no VNet, limited policies).
 
-We default to BasicV2 because time is money when you're iterating.
+We use BasicV2 because it has the right balance of features, cost, and provisioning speed.
 
 ### The AI Gateway Policies (The Good Stuff)
 

@@ -11,8 +11,8 @@ param logAnalyticsWorkspaceId string
 param applicationInsightsId string
 param applicationInsightsInstrumentationKey string
 
-@description('APIM SKU - BasicV2 provisions faster (~5 min), Developer is cheaper but slower (~30 min)')
-@allowed(['Developer', 'BasicV2', 'StandardV2'])
+@description('APIM SKU')
+@allowed(['BasicV2', 'StandardV2'])
 param skuName string = 'BasicV2'
 
 @description('Number of APIM units')

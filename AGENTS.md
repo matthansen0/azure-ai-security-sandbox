@@ -78,7 +78,7 @@ User → Azure Front Door (WAF) → Azure API Management (AI Gateway) → Contai
 ### Deploy the Solution
 ```bash
 azd up                           # Full deployment
-azd up --parameter apimSku=Developer  # Use cheaper APIM SKU (slower to provision)
+azd up --parameter useAPIM=false  # Skip APIM for faster iteration
 ```
 
 ### Populate Search Index
@@ -113,7 +113,7 @@ Set via `azd env set <KEY> <VALUE>`:
 | `AZURE_LOCATION` | (required) | Deployment region |
 | `AZURE_ENV_NAME` | (required) | Environment name prefix |
 | `USE_APIM` | `true` | Enable AI Gateway |
-| `APIM_SKU` | `BasicV2` | APIM SKU (Developer, BasicV2, StandardV2) |
+| `APIM_SKU` | `BasicV2` | APIM SKU (BasicV2, StandardV2) |
 | `WAF_MODE` | `Detection` | WAF mode (Detection, Prevention) |
 
 ## Adding New Security Controls
@@ -134,7 +134,7 @@ When adding new security features:
 | Most resources | < 30 seconds |
 | Cosmos DB | ~1-2 minutes |
 | APIM (BasicV2) | ~5-10 minutes |
-| APIM (Developer) | ~20-40 minutes |
+
 | Front Door | ~10-15 minutes |
 | AFD WAF propagation | ~30-45 minutes |
 
