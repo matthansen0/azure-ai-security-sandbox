@@ -21,7 +21,7 @@
   "forwardPorts": [
     8000
   ],
-  "postCreateCommand": "pip install -r src/backend/requirements.txt",
+  "postCreateCommand": "az bicep install --upgrade && git submodule update --init --recursive && echo 'Bicep + submodules initialized'",
   "remoteUser": "vscode",
   "hostRequirements": {
     "memory": "8gb"

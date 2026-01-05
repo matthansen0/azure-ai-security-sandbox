@@ -3,6 +3,22 @@
 [![Open in GitHub Codespaces](https://img.shields.io/static/v1?style=for-the-badge&label=GitHub+Codespaces&message=Open&color=brightgreen&logo=github)](https://github.com/codespaces/new?hide_repo_select=true&ref=main&repo=matthansen0%2Fazure-ai-security-sandbox&machine=standardLinux32gb&devcontainer_path=.devcontainer%2Fdevcontainer.json&location=WestUs2)
 [![Open in Dev Containers](https://img.shields.io/static/v1?style=for-the-badge&label=Dev%20Containers&message=Open&color=blue&logo=visualstudiocode)](https://vscode.dev/redirect?url=vscode://ms-vscode-remote.remote-containers/cloneInVolume?url=https%3A%2F%2Fgithub.com%2Fmatthansen0%2Fazure-ai-security-sandbox)
 
+## 📑 Table of Contents
+
+- [Overview](#-overview)
+- [Architecture](#️-architecture)
+- [Security Features](#-security-features)
+- [Quick Start](#-quick-start)
+- [Cost Estimation](#-cost-estimation)
+- [Project Structure](#-project-structure)
+- [Roadmap](#-roadmap)
+- [Cleanup](#-cleanup)
+- [Additional Resources](#-additional-resources)
+- [Contributing](#-contributing)
+- [License](#-license)
+
+> **📖 Want to understand what you deployed?** Read [HOW_IT_WORKS.md](HOW_IT_WORKS.md) for a detailed walkthrough of every component, why we chose these configurations, and what you should know before going to production.
+
 ## ✨ Overview
 
 A self-contained Azure AI security demonstration platform featuring a RAG (Retrieval-Augmented Generation) chat application with enterprise-grade security controls. This project deploys everything from scratch using Bicep, pulls the [azure-search-openai-demo](https://github.com/Azure-Samples/azure-search-openai-demo) app from upstream at build time, builds it in Azure Container Registry, and deploys to Azure Container Apps with optional Azure Front Door + WAF. **No application code is stored in this repo**—only infrastructure and a minimal Dockerfile.
@@ -22,7 +38,7 @@ A self-contained Azure AI security demonstration platform featuring a RAG (Retri
 │                   Azure Front Door + WAF (Premium)                   │
 │                   • OWASP 3.2 Managed Rules                         │
 │                   • Bot Protection                                   │
-│                   • Rate Limiting                                    │
+│                   • WAF Logging (Detection by default)               │
 └─────────────────────────────────┬───────────────────────────────────┘
                                   │
                                   ▼
@@ -35,18 +51,21 @@ A self-contained Azure AI security demonstration platform featuring a RAG (Retri
             │                     │                     │
             ▼                     ▼                     ▼
 ┌───────────────────┐  ┌───────────────────┐  ┌───────────────────────┐
-│   Azure OpenAI    │  │  Azure AI Search  │  │    Azure Storage      │
-│   • GPT-4o        │  │  • Vector Search  │  │    • Documents        │
-│   • Embeddings    │  │  • Semantic       │  │    • Defender         │
-│   • Defender AI   │  │    Ranking        │  │    • Malware Scan     │
-└───────────────────┘  └───────────────────┘  └───────────────────────┘
-            │                                           │
-            │                                           ▼
-            │                                 ┌───────────────────────┐
-            │                                 │    Azure Cosmos DB    │
-            │                                 │    • Chat History     │
-            │                                 │    • Defender         │
-            │                                 └───────────────────────┘
+│  Azure API Mgmt   │  │  Azure AI Search  │  │    Azure Storage      │
+│  (AI Gateway)     │  │  • Vector Search  │  │    • Documents        │
+│  • Auth + Retry   │  │  • Semantic       │  │    • Malware Scan     │
+│  • (Optional:     │  │    Ranking        │  │                       │
+│     rate/tokens)  │  │                  │  │                       │
+│  • Managed ID     │  └───────────────────┘  └───────────────────────┘
+└─────────┬─────────┘                                   │
+          │                                             ▼
+          ▼                                   ┌───────────────────────┐
+┌───────────────────┐                         │    Azure Cosmos DB    │
+│   Azure OpenAI    │                         │    • Chat History     │
+│   • GPT-4o        │                         │    • Defender         │
+│   • Embeddings    │                         └───────────────────────┘
+│   • Defender AI   │
+└───────────────────┘
             │
             ▼
 ┌───────────────────────────────────────────────────────────────────────┐
@@ -58,12 +77,24 @@ A self-contained Azure AI security demonstration platform featuring a RAG (Retri
 
 | Component | Protection | Description |
 |-----------|------------|-------------|
-| **Front Door + WAF** | Edge Security | OWASP managed rules, bot protection, DDoS mitigation, rate limiting |
+| **Front Door + WAF** | Edge Security | OWASP managed rules, bot protection, DDoS mitigation |
+| **API Management** | AI Gateway | Centralized AI endpoint management with managed identity auth + retry logic (optional rate limiting / token usage logging) |
 | **Defender for AI** | AI Threat Detection | Prompt injection detection, jailbreak attempts, data exfiltration monitoring |
 | **Defender for Storage** | Data Protection | Malware scanning on upload, sensitive data discovery (PII/PCI/PHI) |
 | **Container Apps** | Serverless Containers | Auto-scaling, managed environment, no infrastructure to manage |
 | **Defender for Cosmos DB** | Database Security | SQL injection detection, anomalous access patterns, data exfiltration alerts |
 | **Managed Identities** | Zero Secrets | No keys in code—all services authenticate via Azure AD |
+
+### 🚪 API Management as AI Gateway
+
+Azure API Management acts as a centralized **AI Gateway** providing:
+
+- **Managed Identity Auth** - APIM authenticates to Azure OpenAI using its managed identity (no keys)
+- **Retry Logic** - Automatic retry with exponential backoff for 429s and 5xx errors
+- **Optional: Rate Limiting / Quotas** - Add incrementally once the basic gateway flow is stable
+- **Optional: Token Usage Logging** - Add incrementally; policy expressions can be finicky
+
+> Note: The default deployed policy set is intentionally minimal/known-good (auth + retry). Advanced policy logic (rate limiting, token parsing, extra tracing) should be added carefully and validated against APIM GatewayLogs.
 
 ## 🚀 Quick Start
 
@@ -79,8 +110,8 @@ A self-contained Azure AI security demonstration platform featuring a RAG (Retri
 The easiest way to deploy is with `azd`:
 
 ```bash
-# Clone the repository
-git clone https://github.com/matthansen0/azure-ai-security-sandbox.git
+# Clone the repository (--recurse-submodules pulls the upstream app code)
+git clone --recurse-submodules https://github.com/matthansen0/azure-ai-security-sandbox.git
 cd azure-ai-security-sandbox
 
 # Login to Azure
@@ -97,10 +128,34 @@ That's it! `azd up` will:
 4. Configure Front Door routing if `useAFD` is true
 5. Output the application URL
 
+> **⏱️ Deployment Time:** Full deployment takes **30-50 minutes** depending on configuration:
+> | Resource | Time |
+> |----------|------|
+> | Most resources | < 30 seconds |
+> | Cosmos DB | ~1-2 minutes |
+> | APIM (BasicV2) | ~5-10 minutes |
+> | APIM (Developer) | ~20-40 minutes |
+> | Front Door + WAF | ~10-15 minutes |
+> | AFD WAF propagation | ~30-45 minutes |
+>
+> **Fastest iteration:** Use `--parameter useAFD=false --parameter useAPIM=false` to deploy in ~5 minutes.
+
 To skip Front Door for faster iteration, disable it during provisioning:
 
 ```bash
 azd up --parameter useAFD=false
+```
+
+To skip API Management (APIM AI Gateway) for faster iteration:
+
+```bash
+azd up --parameter useAPIM=false
+```
+
+Or disable both for the fastest development cycle:
+
+```bash
+azd up --parameter useAFD=false --parameter useAPIM=false
 ```
 
 When Front Door is disabled, `APP_PUBLIC_URL` points directly to the Container App FQDN.
@@ -129,11 +184,24 @@ Other useful parameters:
 # Disable Azure Front Door (use Container Apps URL directly)
 azd up --parameter useAFD=false
 
+# Disable Azure API Management (AI Gateway)
+azd up --parameter useAPIM=false
+
 # Keep Defender for App Services and Cosmos DB opt-in (defaults are false)
 azd up --parameter enableDefenderForAppServices=false --parameter enableDefenderForCosmosDb=false
 ```
 
 ### Troubleshooting
+
+#### Bicep tooling not working in Codespaces
+
+If Bicep files don’t light up (no syntax highlighting / validation) or provisioning complains about missing Bicep:
+
+- Confirm the `Bicep` extension is installed (`ms-azuretools.vscode-bicep`).
+- Rebuild the Codespace (this forces extension re-install).
+- Ensure the Bicep CLI is installed: `az bicep install --upgrade`.
+
+This repo’s devcontainer runs `az bicep install --upgrade` automatically on creation, but an older Codespace may need a rebuild.
 
 #### Soft-Deleted Cognitive Services Resource
 
@@ -153,6 +221,17 @@ Or purge the soft-deleted resource first:
 ```bash
 az cognitiveservices account list-deleted
 az cognitiveservices account purge --name <name> --resource-group <rg> --location <location>
+azd up
+```
+
+#### Soft-Deleted API Management Service
+
+Azure API Management has **soft-delete** with 48-hour retention. Service names are globally unique, so if you delete and redeploy with the same name, you may see conflicts.
+
+**Fix:** Purge the soft-deleted APIM service first:
+```bash
+az apim deletedservice list --subscription <subscription-id>
+az apim deletedservice purge --service-name <name> --location <location>
 azd up
 ```
 
@@ -188,8 +267,37 @@ az login
 5. **Azure Storage** for document blobs
 6. **Azure Cosmos DB** for chat history
 7. **Azure Container Apps** running the RAG application (cloned from upstream and built in ACR at deploy time)
-8. **Azure Front Door + WAF** for edge protection (set `useAFD=false` to skip)
-9. **Microsoft Defender** for Storage; subscription-level Defender for App Services and Cosmos DB remain opt-in
+8. **Azure API Management** as AI Gateway for managed identity auth + retry logic (optional rate limiting/token tracking) (set `useAPIM=false` to skip)
+9. **Azure Front Door + WAF** for edge protection (WAF defaults to Detection mode, set `useAFD=false` to skip)
+10. **Microsoft Defender** for Storage; subscription-level Defender for App Services and Cosmos DB remain opt-in
+
+### 💰 Cost Estimation
+
+Estimated costs for running the sandbox (low/dev usage). Actual costs vary based on usage.
+
+| Configuration | Daily | Monthly |
+|--------------|-------|---------|
+| **Full deployment** (BasicV2 APIM + AFD) | ~$11-12 | ~$320-350 |
+| **No APIM, No AFD** (fastest iteration) | ~$3-4 | ~$95-120 |
+
+**Cost breakdown by resource:**
+
+| Resource | Monthly Cost | Notes |
+|----------|-------------|-------|
+| API Management (BasicV2) | ~$180 | Use `useAPIM=false` to skip |
+| Front Door Premium + WAF | ~$45 | Base + WAF policy |
+| AI Search (Basic) | ~$75 | Fixed tier cost |
+| Azure OpenAI | ~$5-20 | Pay per token (GPT-4o + embeddings) |
+| Cosmos DB (Serverless) | ~$5-10 | Pay per RU |
+| Container Apps | ~$5-20 | Consumption-based |
+| Container Registry (Basic) | ~$5 | Image storage |
+| Storage Account | ~$1-2 | Blob storage for docs |
+| Log Analytics + App Insights | ~$5-10 | Pay per GB ingested |
+
+> **💡 Cost-saving tips:**
+> - Use `--parameter useAFD=false` to skip Front Door during development (~$45/mo savings)
+> - Use `--parameter useAPIM=false` to skip APIM for local testing (~$180/mo savings)
+> - Remember to `azd down --force --purge` when not using the environment
 
 ### Access the Application
 
@@ -203,9 +311,12 @@ https://<your-frontdoor-endpoint>.azurefd.net
 
 ```
 azure-ai-security-sandbox/
+├── .github/
+│   └── copilot-instructions.md # → symlink to AGENTS.md
 ├── app/                        # Application build assets
 │   └── backend/               # Dockerfile only (clones upstream at build time)
 │       └── Dockerfile
+├── docs/                       # Documentation
 ├── infra/                      # Bicep infrastructure
 │   ├── main.bicep             # Main orchestration
 │   ├── main.parameters.json   # Default parameters
@@ -221,6 +332,8 @@ azure-ai-security-sandbox/
 │       ├── storage.bicep      # Storage account
 │       └── subscription-security.bicep # Subscription-level Defender
 ├── docs/                       # Documentation
+├── AGENTS.md                   # Instructions for AI coding agents
+├── HOW_IT_WORKS.md             # Deep dive into what got deployed and why
 ├── azure.yaml                  # Azure Developer CLI configuration
 ├── deploy.sh                   # Bash deployment script
 ├── cleanup.sh                  # Resource cleanup script
@@ -254,8 +367,10 @@ azure-ai-security-sandbox/
 
 ### With azd (Recommended)
 ```bash
-azd down
+azd down --force --purge
 ```
+
+The `--purge` flag triggers a `postdown` hook that automatically purges soft-deleted Cognitive Services and APIM resources, preventing conflicts on future deployments.
 
 ### With Bash Script
 ```bash

@@ -30,8 +30,27 @@ param cosmosDbEndpoint string
 param cosmosDbDatabaseName string
 param cosmosDbContainerName string
 
-// Keys and defaults
-var openAiKey = listKeys(resourceId('Microsoft.CognitiveServices/accounts', openAiAccountName), '2024-04-01-preview').key1
+// AI Gateway (APIM) parameters - optional, when provided routes OpenAI traffic through APIM
+@description('APIM Gateway URL for AI Gateway routing (e.g., https://apim-xxx.azure-api.net/openai)')
+param apimOpenAiEndpoint string = ''
+
+@description('APIM subscription key for AI Gateway authentication')
+@secure()
+param apimSubscriptionKey string = ''
+
+// Determine if APIM routing is enabled
+var useApimGateway = !empty(apimOpenAiEndpoint) && !empty(apimSubscriptionKey)
+
+// Always keep AZURE_OPENAI_ENDPOINT pointing at the real Azure OpenAI resource.
+// The upstream app uses AZURE_OPENAI_CUSTOM_URL as the request base URL when OPENAI_HOST=azure_custom.
+var resolvedOpenAiEndpoint = openAiEndpoint
+
+// The upstream app (OpenAI SDK) uses base_url like: https://{endpoint}/openai/v1
+// Our APIM API path is /openai, so the APIM base_url should be: https://{apim}/openai/v1
+var apimOpenAiBaseUrlV1 = useApimGateway ? '${apimOpenAiEndpoint}/v1' : ''
+
+// Keys and defaults - only retrieve OpenAI key if not using APIM
+var openAiKey = useApimGateway ? '' : listKeys(resourceId('Microsoft.CognitiveServices/accounts', openAiAccountName), '2024-04-01-preview').key1
 var searchAdminKey = listAdminKeys(resourceId('Microsoft.Search/searchServices', searchServiceName), '2024-03-01-preview').primaryKey
 var resolvedSearchIndexName = !empty(trim(searchIndexName)) ? searchIndexName : 'gptkbindex'
 var storageContainer = 'content'
@@ -101,7 +120,8 @@ resource containerApp 'Microsoft.App/containerApps@2024-03-01' = {
         }
         {
           name: 'openai-api-key'
-          value: openAiKey
+          // When using APIM Gateway, use APIM subscription key; otherwise use direct OpenAI key
+          value: useApimGateway ? apimSubscriptionKey : openAiKey
         }
         {
           name: 'search-api-key'
@@ -149,7 +169,19 @@ resource containerApp 'Microsoft.App/containerApps@2024-03-01' = {
             }
             {
               name: 'AZURE_OPENAI_ENDPOINT'
-              value: openAiEndpoint
+              // Always the real Azure OpenAI endpoint; required by some upstream components even when routing via APIM.
+              value: resolvedOpenAiEndpoint
+            }
+            {
+              // When APIM is enabled, use 'azure_custom' to allow custom URL routing through the gateway
+              name: 'OPENAI_HOST'
+              value: useApimGateway ? 'azure_custom' : 'azure'
+            }
+            {
+              // Custom base_url used by the upstream OpenAI SDK when OPENAI_HOST=azure_custom.
+              // Upstream uses base_url patterns ending in /openai/v1, so APIM must expose /openai/v1/*.
+              name: 'AZURE_OPENAI_CUSTOM_URL'
+              value: apimOpenAiBaseUrlV1
             }
             {
               name: 'AZURE_OPENAI_CHAT_DEPLOYMENT'
@@ -303,3 +335,5 @@ output containerAppName string = containerApp.name
 output containerAppFqdn string = containerApp.properties.configuration.ingress.fqdn
 output identityPrincipalId string = containerApp.identity.principalId
 output imageName string = containerImage
+output usesApimGateway bool = useApimGateway
+output configuredOpenAiEndpoint string = resolvedOpenAiEndpoint
