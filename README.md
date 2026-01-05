@@ -38,7 +38,7 @@ A self-contained Azure AI security demonstration platform featuring a RAG (Retri
 │                   Azure Front Door + WAF (Premium)                   │
 │                   • OWASP 3.2 Managed Rules                         │
 │                   • Bot Protection                                   │
-│                   • Rate Limiting                                    │
+│                   • WAF Logging (Detection by default)               │
 └─────────────────────────────────┬───────────────────────────────────┘
                                   │
                                   ▼
@@ -53,8 +53,9 @@ A self-contained Azure AI security demonstration platform featuring a RAG (Retri
 ┌───────────────────┐  ┌───────────────────┐  ┌───────────────────────┐
 │  Azure API Mgmt   │  │  Azure AI Search  │  │    Azure Storage      │
 │  (AI Gateway)     │  │  • Vector Search  │  │    • Documents        │
-│  • Rate Limiting  │  │  • Semantic       │  │    • Defender         │
-│  • Token Tracking │  │    Ranking        │  │    • Malware Scan     │
+│  • Auth + Retry   │  │  • Semantic       │  │    • Malware Scan     │
+│  • (Optional:     │  │    Ranking        │  │                       │
+│     rate/tokens)  │  │                  │  │                       │
 │  • Managed ID     │  └───────────────────┘  └───────────────────────┘
 └─────────┬─────────┘                                   │
           │                                             ▼
@@ -76,8 +77,8 @@ A self-contained Azure AI security demonstration platform featuring a RAG (Retri
 
 | Component | Protection | Description |
 |-----------|------------|-------------|
-| **Front Door + WAF** | Edge Security | OWASP managed rules, bot protection, DDoS mitigation, rate limiting |
-| **API Management** | AI Gateway | Centralized AI endpoint management, rate limiting, token tracking, request/response logging |
+| **Front Door + WAF** | Edge Security | OWASP managed rules, bot protection, DDoS mitigation |
+| **API Management** | AI Gateway | Centralized AI endpoint management with managed identity auth + retry logic (optional rate limiting / token usage logging) |
 | **Defender for AI** | AI Threat Detection | Prompt injection detection, jailbreak attempts, data exfiltration monitoring |
 | **Defender for Storage** | Data Protection | Malware scanning on upload, sensitive data discovery (PII/PCI/PHI) |
 | **Container Apps** | Serverless Containers | Auto-scaling, managed environment, no infrastructure to manage |
@@ -88,12 +89,12 @@ A self-contained Azure AI security demonstration platform featuring a RAG (Retri
 
 Azure API Management acts as a centralized **AI Gateway** providing:
 
-- **Rate Limiting** - Per-subscription rate limits (60 requests/min default)
-- **Token Tracking** - Automatic extraction and logging of token usage from OpenAI responses
 - **Managed Identity Auth** - APIM authenticates to Azure OpenAI using its managed identity (no keys)
 - **Retry Logic** - Automatic retry with exponential backoff for 429s and 5xx errors
-- **Request/Response Logging** - Full audit trail in Application Insights
-- **Centralized Policies** - Apply consistent security policies across all AI consumers
+- **Optional: Rate Limiting / Quotas** - Add incrementally once the basic gateway flow is stable
+- **Optional: Token Usage Logging** - Add incrementally; policy expressions can be finicky
+
+> Note: The default deployed policy set is intentionally minimal/known-good (auth + retry). Advanced policy logic (rate limiting, token parsing, extra tracing) should be added carefully and validated against APIM GatewayLogs.
 
 ## 🚀 Quick Start
 
@@ -192,6 +193,16 @@ azd up --parameter enableDefenderForAppServices=false --parameter enableDefender
 
 ### Troubleshooting
 
+#### Bicep tooling not working in Codespaces
+
+If Bicep files don’t light up (no syntax highlighting / validation) or provisioning complains about missing Bicep:
+
+- Confirm the `Bicep` extension is installed (`ms-azuretools.vscode-bicep`).
+- Rebuild the Codespace (this forces extension re-install).
+- Ensure the Bicep CLI is installed: `az bicep install --upgrade`.
+
+This repo’s devcontainer runs `az bicep install --upgrade` automatically on creation, but an older Codespace may need a rebuild.
+
 #### Soft-Deleted Cognitive Services Resource
 
 Azure Cognitive Services (OpenAI) has **enforced soft-delete** (90-day retention). If you delete and redeploy with the same environment name, you may see:
@@ -256,7 +267,7 @@ az login
 5. **Azure Storage** for document blobs
 6. **Azure Cosmos DB** for chat history
 7. **Azure Container Apps** running the RAG application (cloned from upstream and built in ACR at deploy time)
-8. **Azure API Management** as AI Gateway for rate limiting, token tracking, and managed identity auth (set `useAPIM=false` to skip)
+8. **Azure API Management** as AI Gateway for managed identity auth + retry logic (optional rate limiting/token tracking) (set `useAPIM=false` to skip)
 9. **Azure Front Door + WAF** for edge protection (WAF defaults to Detection mode, set `useAFD=false` to skip)
 10. **Microsoft Defender** for Storage; subscription-level Defender for App Services and Cosmos DB remain opt-in
 

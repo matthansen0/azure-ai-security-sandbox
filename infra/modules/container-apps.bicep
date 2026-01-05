@@ -41,8 +41,13 @@ param apimSubscriptionKey string = ''
 // Determine if APIM routing is enabled
 var useApimGateway = !empty(apimOpenAiEndpoint) && !empty(apimSubscriptionKey)
 
-// Use APIM endpoint when available, otherwise direct Azure OpenAI
-var resolvedOpenAiEndpoint = useApimGateway ? apimOpenAiEndpoint : openAiEndpoint
+// Always keep AZURE_OPENAI_ENDPOINT pointing at the real Azure OpenAI resource.
+// The upstream app uses AZURE_OPENAI_CUSTOM_URL as the request base URL when OPENAI_HOST=azure_custom.
+var resolvedOpenAiEndpoint = openAiEndpoint
+
+// The upstream app (OpenAI SDK) uses base_url like: https://{endpoint}/openai/v1
+// Our APIM API path is /openai, so the APIM base_url should be: https://{apim}/openai/v1
+var apimOpenAiBaseUrlV1 = useApimGateway ? '${apimOpenAiEndpoint}/v1' : ''
 
 // Keys and defaults - only retrieve OpenAI key if not using APIM
 var openAiKey = useApimGateway ? '' : listKeys(resourceId('Microsoft.CognitiveServices/accounts', openAiAccountName), '2024-04-01-preview').key1
@@ -164,7 +169,7 @@ resource containerApp 'Microsoft.App/containerApps@2024-03-01' = {
             }
             {
               name: 'AZURE_OPENAI_ENDPOINT'
-              // Route through APIM AI Gateway when enabled, otherwise direct to Azure OpenAI
+              // Always the real Azure OpenAI endpoint; required by some upstream components even when routing via APIM.
               value: resolvedOpenAiEndpoint
             }
             {
@@ -173,12 +178,10 @@ resource containerApp 'Microsoft.App/containerApps@2024-03-01' = {
               value: useApimGateway ? 'azure_custom' : 'azure'
             }
             {
-              // Custom URL for APIM gateway routing - required when OPENAI_HOST=azure_custom
-              // The OpenAI SDK appends /deployments/{name}/chat/completions to this base URL
-              // apimOpenAiEndpoint is already https://apim-xxx.azure-api.net/openai
-              // Do NOT add /v1 - APIM expects /openai/deployments/... not /openai/v1/deployments/...
+              // Custom base_url used by the upstream OpenAI SDK when OPENAI_HOST=azure_custom.
+              // Upstream uses base_url patterns ending in /openai/v1, so APIM must expose /openai/v1/*.
               name: 'AZURE_OPENAI_CUSTOM_URL'
-              value: useApimGateway ? apimOpenAiEndpoint : ''
+              value: apimOpenAiBaseUrlV1
             }
             {
               name: 'AZURE_OPENAI_CHAT_DEPLOYMENT'

@@ -26,7 +26,7 @@ You deployed a bunch of Azure resources with `azd up`. Here's what they do, why 
 When a user asks "What's in my health plan?", here's the journey:
 
 ```
-User → Front Door (WAF scans) → Container App → APIM (rate limits) → Azure OpenAI
+User → Front Door (WAF scans) → Container App → APIM (gateway policies) → Azure OpenAI
                                       ↓
                                AI Search ← finds relevant docs from Storage
 ```
@@ -99,7 +99,7 @@ This is where it gets interesting for AI specifically.
 ### What We Deployed
 
 - **Azure API Management** - Acting as an "AI Gateway"
-- **Custom policies** - Rate limiting, token tracking, retry logic, auth
+- **Custom policies** - Auth, retry logic (and optional rate limiting / token tracking)
 
 ### Why This Configuration
 
@@ -120,7 +120,7 @@ We use BasicV2 because it has the right balance of features, cost, and provision
 
 ### The AI Gateway Policies (The Good Stuff)
 
-Here's what the APIM policies actually do:
+Here's what the APIM policies do in the default, known-good configuration:
 
 **1. Managed Identity Auth (no API keys!)**
 ```xml
@@ -128,30 +128,25 @@ Here's what the APIM policies actually do:
 ```
 APIM uses its managed identity to authenticate to Azure OpenAI. Your app never sees an API key.
 
-**2. Rate Limiting**
-```xml
-<rate-limit calls="60" renewal-period="60" />
-```
-60 requests per minute per subscription. Protects against runaway loops and abuse.
-
-**3. Token Tracking**
-```xml
-<set-variable name="promptTokens" value="@(context.Response.Body...)" />
-```
-Extracts `prompt_tokens`, `completion_tokens`, `total_tokens` from every response and logs them. Now you can query: "How many tokens did user X consume this month?"
-
-**4. Retry Logic**
+**2. Retry Logic**
 ```xml
 <retry condition="@(context.Response.StatusCode == 429)" count="3" interval="10" />
 ```
 Azure OpenAI returns 429 when you hit rate limits. APIM automatically retries with backoff.
+
+**Optional add-ons (recommended for production, add incrementally):**
+
+- Rate limiting / quotas
+- Token usage extraction & logging
+- Request/response tracing
+
+These are powerful, but APIM policy expressions can be finicky: a policy expression failure can return HTTP 500 even if the backend (Azure OpenAI) returns HTTP 200. If you see APIM 500 with an `activityId`, use the Log Analytics workflow documented in [AGENTS.md](AGENTS.md) to find `ExpressionValueValidationFailure` and the failing policy section.
 
 ### Key Settings You Should Know
 
 | Parameter | Default | What It Does |
 |-----------|---------|--------------|
 | `skuName` | `BasicV2` | APIM tier - affects cost and provisioning time |
-| `rate-limit calls` | `60` | Requests per minute per subscription |
 | `retry count` | `3` | How many times to retry 429s |
 
 ### Tradeoffs & Alternatives
@@ -204,10 +199,11 @@ identity: {
 
 ```bicep
 var useApimGateway = !empty(apimOpenAiEndpoint) && !empty(apimSubscriptionKey)
-var resolvedOpenAiEndpoint = useApimGateway ? apimOpenAiEndpoint : openAiEndpoint
+var resolvedOpenAiEndpoint = openAiEndpoint
+var apimOpenAiBaseUrlV1 = useApimGateway ? '${apimOpenAiEndpoint}/v1' : ''
 ```
 
-If APIM is deployed, the app talks to APIM. If not, it talks directly to Azure OpenAI. Same app code, different plumbing.
+If APIM is deployed, the upstream app uses `OPENAI_HOST=azure_custom` + `AZURE_OPENAI_CUSTOM_URL=https://.../openai/v1` as the OpenAI SDK `base_url`, while still keeping `AZURE_OPENAI_ENDPOINT` pointed at the real Azure OpenAI resource. If APIM is not deployed, the app talks directly to Azure OpenAI.
 
 ### Key Settings You Should Know
 

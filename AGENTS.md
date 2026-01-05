@@ -20,7 +20,7 @@ User → Azure Front Door (WAF) → Azure API Management (AI Gateway) → Contai
 
 ### Security Layers
 1. **Azure Front Door** - Global edge with WAF protection (default: Detection mode)
-2. **API Management** - AI Gateway with rate limiting, token tracking, request logging
+2. **API Management** - AI Gateway with managed identity auth + retry logic (optional rate limiting/token tracking)
 3. **Container Apps** - Isolated compute with managed identity
 4. **Private Endpoints** - (Optional) Network isolation for backend services
 5. **RBAC** - Least-privilege role assignments, no API keys
@@ -38,7 +38,7 @@ User → Azure Front Door (WAF) → Azure API Management (AI Gateway) → Contai
 - `main.parameters.json` - azd parameter mappings
 - `modules/` - Modular Bicep components:
   - `ai-services.bicep` - Azure OpenAI with model deployments
-  - `api-management.bicep` - **AI Gateway** with policies (rate limiting, auth, logging)
+  - `api-management.bicep` - **AI Gateway** with policies (auth + retry; optional rate limiting/token logging)
   - `app-service.bicep` - Container Apps environment and app
   - `container-apps.bicep` - Container Apps with managed identity
   - `container-registry.bicep` - ACR for container images
@@ -75,7 +75,7 @@ User → Azure Front Door (WAF) → Azure API Management (AI Gateway) → Contai
 |------|---------|
 | `azure.yaml` | azd configuration, hooks (postprovision, postdown) |
 | `infra/main.bicep` | All configurable parameters live here |
-| `infra/modules/api-management.bicep` | AI Gateway policies - rate limits, auth, logging |
+| `infra/modules/api-management.bicep` | AI Gateway policies - auth + retry (optional rate limits/token logging) |
 | `infra/modules/front-door.bicep` | WAF rules and mode configuration |
 | `deploy.sh` / `cleanup.sh` | Manual deployment scripts (prefer azd) |
 
@@ -227,6 +227,47 @@ When adding new security features:
 | `openai.AuthenticationError` | APIM enabled but `OPENAI_HOST` not set to `azure_custom` - redeploy with latest `container-apps.bicep` |
 | `openai.NotFoundError` | See "APIM + OpenAI SDK Integration" section below |
 
+## APIM Policy Gotchas (Learned the Hard Way)
+
+### APIM `500` + `ExpressionValueValidationFailure`
+
+If APIM returns HTTP 500 with a body like:
+`{"statusCode":500,"message":"Internal server error","activityId":"..."}`
+
+…and Container Apps surfaces it as `openai.InternalServerError`, it can be a *policy expression* failing (not Azure OpenAI).
+
+Symptoms in Log Analytics (APIM `GatewayLogs`):
+
+- `lastError_reason_s`: `ExpressionValueValidationFailure`
+- `lastError_message_s`: `Expression value is invalid. The value field is required.`
+- `lastError_section_s`: `inbound` or `outbound`
+
+Important: APIM may successfully call Azure OpenAI (HTTP 200) and then still return 500 if an outbound policy expression fails (for example, response body parsing/token counting).
+
+### How to Debug APIM 500s Quickly
+
+1. Get the `activityId` from the APIM 500 response body.
+2. Query Log Analytics `AzureDiagnostics` for the matching `CorrelationId`.
+
+This dev container sometimes has a broken `az monitor` module. Work around it by using Log Analytics Query REST API:
+
+```bash
+# 1) Get workspace customerId (workspaceId)
+WS_ID="/subscriptions/<sub>/resourceGroups/<rg>/providers/Microsoft.OperationalInsights/workspaces/<wsName>"
+WORKSPACE_ID=$(az rest --method get --uri "https://management.azure.com${WS_ID}?api-version=2023-09-01" --query properties.customerId -o tsv)
+
+# 2) Query AzureDiagnostics for the APIM correlationId
+TOKEN=$(az account get-access-token --resource https://api.loganalytics.io --query accessToken -o tsv)
+CID="<activityId-from-500-body>"
+QUERY="AzureDiagnostics | where ResourceProvider == 'MICROSOFT.APIMANAGEMENT' | where CorrelationId == '${CID}' | project TimeGenerated, lastError_section_s, lastError_reason_s, lastError_message_s, traceRecords_s, errors_s | take 1"
+curl -sS -X POST "https://api.loganalytics.io/v1/workspaces/${WORKSPACE_ID}/query" \
+  -H "Authorization: Bearer ${TOKEN}" \
+  -H 'Content-Type: application/json' \
+  --data "$(jq -nc --arg q "$QUERY" '{query:$q}')" | jq
+```
+
+If you see `ExpressionValueValidationFailure`, simplify the policy to the essentials (auth + forward + managed identity) and re-introduce tracing/rate-limit/token parsing incrementally with APIM-supported expression patterns.
+
 ## APIM + OpenAI SDK Integration (Critical!)
 
 > **✅ FIXED (Jan 2026):** The Container App now correctly sets `OPENAI_HOST=azure_custom` and `AZURE_OPENAI_CUSTOM_URL` when APIM is enabled. The app uses `AsyncAzureOpenAI` client which constructs Azure-style URLs (`/deployments/{name}/chat/completions`), so APIM routes correctly without needing URL rewrite policies.
@@ -240,13 +281,15 @@ This section documents non-obvious behavior when routing OpenAI SDK requests thr
 The upstream `azure-search-openai-demo` uses `OPENAI_HOST=azure_custom` mode with the generic `AsyncOpenAI` client (NOT `AsyncAzureOpenAI`). This has important implications:
 
 **OpenAI SDK URL format** (what the app sends):
-```
+
+```text
 POST {base_url}/chat/completions
 Body: {"model": "gpt-4o", "messages": [...]}
 ```
 
 **Azure OpenAI URL format** (what Azure expects):
-```
+
+```text
 POST {endpoint}/openai/deployments/{deployment}/chat/completions?api-version=2024-06-01
 ```
 
@@ -259,13 +302,13 @@ When `useAPIM=true`, `container-apps.bicep` **automatically configures** these e
 | Variable | Value | Purpose |
 |----------|-------|---------|
 | `OPENAI_HOST` | `azure_custom` | Tells app to use custom URL (auto-set) |
-| `AZURE_OPENAI_CUSTOM_URL` | `https://apim-xxx.azure-api.net/openai` | APIM gateway URL (auto-set, NO `/v1`) |
+| `AZURE_OPENAI_CUSTOM_URL` | `https://apim-xxx.azure-api.net/openai/v1` | APIM gateway base URL (auto-set) |
 | `AZURE_OPENAI_API_KEY_OVERRIDE` | APIM subscription key | Authentication to APIM (auto-set from secret) |
 
 **Common mistakes:**
 - ❌ `https://apim.../openai/openai` - duplicate path segment
-- ❌ `https://apim.../openai/v1` - SDK doesn't use `/v1` for Azure
-- ✅ `https://apim.../openai` - correct base URL
+- ❌ `https://apim.../openai` - missing `/v1` (SDK base_url expects `/openai/v1`)
+- ✅ `https://apim.../openai/v1` - correct base URL
 
 ### APIM Policy for URL Rewriting
 

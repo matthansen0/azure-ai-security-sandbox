@@ -1,6 +1,6 @@
 // api-management.bicep - Azure API Management as AI Gateway
 // Provides centralized management, security, and observability for Azure OpenAI endpoints
-// Features: Rate limiting, token management, caching, request/response logging, and semantic caching
+// Features: Managed identity auth + retries (default), plus optional add-ons like rate limiting and token usage logging
 
 param location string
 param tags object = {}
@@ -20,6 +20,63 @@ param skuCapacity int = 1
 
 @description('Azure OpenAI endpoint URL')
 param openAiEndpoint string
+
+// Reusable policy XML blocks (avoid referencing other resource properties at runtime)
+var openaiSdkChatCompletionsPolicyXml = '''
+<policies>
+  <inbound>
+    <base />
+    <!-- Extract model from request body and rewrite URL to Azure format -->
+    <set-variable name="request-body" value="@(context.Request.Body.As&lt;JObject&gt;(preserveContent: true))" />
+    <set-variable name="model" value="@(((JObject)context.Variables[&quot;request-body&quot;])?[&quot;model&quot;]?.ToString() ?? &quot;gpt-4o&quot;)" />
+    <!-- Rewrite URL to include deployment name -->
+    <rewrite-uri template="@(&quot;/deployments/&quot; + (string)context.Variables[&quot;model&quot;] + &quot;/chat/completions&quot;)" copy-unmatched-params="false" />
+    <set-query-parameter name="api-version" exists-action="override">
+      <value>2024-06-01</value>
+    </set-query-parameter>
+    <trace source="AI Gateway" severity="information">
+      <message>@(&quot;OpenAI SDK request rewritten: model=&quot; + (string)context.Variables[&quot;model&quot;])</message>
+    </trace>
+  </inbound>
+  <backend>
+    <base />
+  </backend>
+  <outbound>
+    <base />
+  </outbound>
+  <on-error>
+    <base />
+  </on-error>
+</policies>
+'''
+
+var openaiSdkEmbeddingsPolicyXml = '''
+<policies>
+  <inbound>
+    <base />
+    <!-- Extract model from request body and rewrite URL to Azure format -->
+    <set-variable name="request-body" value="@(context.Request.Body.As&lt;JObject&gt;(preserveContent: true))" />
+    <set-variable name="model" value="@(((JObject)context.Variables[&quot;request-body&quot;])?[&quot;model&quot;]?.ToString() ?? &quot;text-embedding-3-small&quot;)" />
+    <!-- Rewrite URL to include deployment name -->
+    <rewrite-uri template="@(&quot;/deployments/&quot; + (string)context.Variables[&quot;model&quot;] + &quot;/embeddings&quot;)" copy-unmatched-params="false" />
+    <set-query-parameter name="api-version" exists-action="override">
+      <value>2024-06-01</value>
+    </set-query-parameter>
+    <trace source="AI Gateway" severity="information">
+      <message>@(&quot;OpenAI SDK embedding request rewritten: model=&quot; + (string)context.Variables[&quot;model&quot;])</message>
+    </trace>
+  </inbound>
+  <backend>
+    <base />
+  </backend>
+  <outbound>
+    <base />
+  </outbound>
+  <on-error>
+    <base />
+  </on-error>
+</policies>
+'''
 
 // API Management Service
 resource apimService 'Microsoft.ApiManagement/service@2023-09-01-preview' = {
@@ -170,7 +227,9 @@ resource openAiApi 'Microsoft.ApiManagement/service/apis@2023-09-01-preview' = {
   properties: {
     displayName: 'Azure OpenAI Service API'
     description: 'Azure OpenAI Service API with AI Gateway features'
-    subscriptionRequired: true
+    // Upstream OpenAI SDK clients typically authenticate using the Authorization header.
+    // APIM subscription enforcement can't validate transformed headers, so we perform auth in policy instead.
+    subscriptionRequired: false
     path: 'openai'
     protocols: ['https']
     // Include /openai in service URL since APIM strips the API path prefix
@@ -180,6 +239,18 @@ resource openAiApi 'Microsoft.ApiManagement/service/apis@2023-09-01-preview' = {
       header: 'api-key'
       query: 'api-key'
     }
+  }
+}
+
+// Named value containing the internal key used by Container Apps to authenticate to APIM.
+// This is validated in policy (to support both api-key and Authorization: Bearer flows).
+resource internalClientKeyNamedValue 'Microsoft.ApiManagement/service/namedValues@2023-09-01-preview' = {
+  parent: apimService
+  name: 'internal-client-key'
+  properties: {
+    displayName: 'internal-client-key'
+    value: internalSubscription.listSecrets().primaryKey
+    secret: true
   }
 }
 
@@ -284,39 +355,35 @@ resource openaiSdkChatCompletionsOperation 'Microsoft.ApiManagement/service/apis
   }
 }
 
+// OpenAI SDK-compatible Chat Completions with /v1 prefix (upstream base_url uses /openai/v1)
+resource openaiSdkChatCompletionsV1Operation 'Microsoft.ApiManagement/service/apis/operations@2023-09-01-preview' = {
+  parent: openAiApi
+  name: 'openai-sdk-chat-completions-v1'
+  properties: {
+    displayName: 'OpenAI SDK - Chat Completions (v1)'
+    description: 'Handles /v1/chat/completions requests and rewrites to Azure format'
+    method: 'POST'
+    urlTemplate: '/v1/chat/completions'
+  }
+}
+
 // Policy to rewrite OpenAI SDK requests to Azure OpenAI format
 resource openaiSdkChatCompletionsPolicy 'Microsoft.ApiManagement/service/apis/operations/policies@2023-09-01-preview' = {
   parent: openaiSdkChatCompletionsOperation
   name: 'policy'
   properties: {
     format: 'xml'
-    value: '''
-<policies>
-    <inbound>
-        <base />
-        <!-- Extract model from request body and rewrite URL to Azure format -->
-        <set-variable name="request-body" value="@(context.Request.Body.As<JObject>(preserveContent: true))" />
-        <set-variable name="model" value="@{
-            var body = (JObject)context.Variables["request-body"];
-            return body?["model"]?.ToString() ?? "gpt-4o";
-        }" />
-        <!-- Rewrite URL to include deployment name -->
-        <rewrite-uri template="@($"/deployments/{context.Variables["model"]}/chat/completions?api-version=2024-06-01")" copy-unmatched-params="false" />
-        <trace source="AI Gateway" severity="information">
-            <message>@($"OpenAI SDK request rewritten: model={context.Variables["model"]}")</message>
-        </trace>
-    </inbound>
-    <backend>
-        <base />
-    </backend>
-    <outbound>
-        <base />
-    </outbound>
-    <on-error>
-        <base />
-    </on-error>
-</policies>
-'''
+  value: openaiSdkChatCompletionsPolicyXml
+  }
+}
+
+// Reuse the same rewrite policy for /v1/chat/completions
+resource openaiSdkChatCompletionsV1Policy 'Microsoft.ApiManagement/service/apis/operations/policies@2023-09-01-preview' = {
+  parent: openaiSdkChatCompletionsV1Operation
+  name: 'policy'
+  properties: {
+    format: 'xml'
+    value: openaiSdkChatCompletionsPolicyXml
   }
 }
 
@@ -332,39 +399,35 @@ resource openaiSdkEmbeddingsOperation 'Microsoft.ApiManagement/service/apis/oper
   }
 }
 
+// OpenAI SDK-compatible Embeddings with /v1 prefix (upstream base_url uses /openai/v1)
+resource openaiSdkEmbeddingsV1Operation 'Microsoft.ApiManagement/service/apis/operations@2023-09-01-preview' = {
+  parent: openAiApi
+  name: 'openai-sdk-embeddings-v1'
+  properties: {
+    displayName: 'OpenAI SDK - Embeddings (v1)'
+    description: 'Handles /v1/embeddings requests and rewrites to Azure format'
+    method: 'POST'
+    urlTemplate: '/v1/embeddings'
+  }
+}
+
 // Policy to rewrite OpenAI SDK embedding requests to Azure format
 resource openaiSdkEmbeddingsPolicy 'Microsoft.ApiManagement/service/apis/operations/policies@2023-09-01-preview' = {
   parent: openaiSdkEmbeddingsOperation
   name: 'policy'
   properties: {
     format: 'xml'
-    value: '''
-<policies>
-    <inbound>
-        <base />
-        <!-- Extract model from request body and rewrite URL to Azure format -->
-        <set-variable name="request-body" value="@(context.Request.Body.As<JObject>(preserveContent: true))" />
-        <set-variable name="model" value="@{
-            var body = (JObject)context.Variables["request-body"];
-            return body?["model"]?.ToString() ?? "text-embedding-3-small";
-        }" />
-        <!-- Rewrite URL to include deployment name -->
-        <rewrite-uri template="@($"/deployments/{context.Variables["model"]}/embeddings?api-version=2024-06-01")" copy-unmatched-params="false" />
-        <trace source="AI Gateway" severity="information">
-            <message>@($"OpenAI SDK embedding request rewritten: model={context.Variables["model"]}")</message>
-        </trace>
-    </inbound>
-    <backend>
-        <base />
-    </backend>
-    <outbound>
-        <base />
-    </outbound>
-    <on-error>
-        <base />
-    </on-error>
-</policies>
-'''
+  value: openaiSdkEmbeddingsPolicyXml
+  }
+}
+
+// Reuse the same rewrite policy for /v1/embeddings
+resource openaiSdkEmbeddingsV1Policy 'Microsoft.ApiManagement/service/apis/operations/policies@2023-09-01-preview' = {
+  parent: openaiSdkEmbeddingsV1Operation
+  name: 'policy'
+  properties: {
+    format: 'xml'
+    value: openaiSdkEmbeddingsPolicyXml
   }
 }
 
@@ -379,32 +442,45 @@ resource openAiApiPolicy 'Microsoft.ApiManagement/service/apis/policies@2023-09-
 <policies>
     <inbound>
         <base />
-        <!-- Remove any incoming api-key header to use managed identity -->
-        <set-header name="api-key" exists-action="delete" />
+    <!-- Accept client auth from either api-key or Authorization: Bearer (OpenAI SDK default). -->
+    <set-variable name="clientKey" value='@(
+      context.Request.Headers.ContainsKey("api-key")
+        ? context.Request.Headers["api-key"][0]
+        : (
+          context.Request.Headers.ContainsKey("Authorization")
+            ? (
+              context.Request.Headers["Authorization"][0].StartsWith("Bearer ", StringComparison.OrdinalIgnoreCase)
+                ? context.Request.Headers["Authorization"][0].Substring(7)
+                : context.Request.Headers["Authorization"][0]
+            )
+            : ""
+        )
+    )' />
+
+    <choose>
+      <when condition='@(!string.IsNullOrEmpty((string)context.Variables["clientKey"]) &amp;&amp; ((string)context.Variables["clientKey"]) == "{{internal-client-key}}")'>
+        <!-- ok -->
+      </when>
+      <otherwise>
+        <return-response>
+          <set-status code="401" reason="Unauthorized" />
+          <set-header name="Content-Type" exists-action="override">
+            <value>application/json</value>
+          </set-header>
+          <set-body>{"error":{"code":"Unauthorized","message":"Missing or invalid client key."}}</set-body>
+        </return-response>
+      </otherwise>
+    </choose>
+
+    <!-- Remove any incoming client auth headers; APIM will use managed identity to Azure OpenAI -->
+    <set-header name="api-key" exists-action="delete" />
+    <set-header name="Authorization" exists-action="delete" />
         
         <!-- Authenticate with Azure OpenAI using APIM managed identity -->
         <authentication-managed-identity resource="https://cognitiveservices.azure.com" output-token-variable-name="managed-id-access-token" ignore-error="false" />
         <set-header name="Authorization" exists-action="override">
             <value>@("Bearer " + (string)context.Variables["managed-id-access-token"])</value>
         </set-header>
-        
-        <!-- Rate limiting by subscription - 60 requests per minute -->
-        <rate-limit-by-key calls="60" renewal-period="60" counter-key="@(context.Subscription != null ? context.Subscription.Key : context.Request.IpAddress)" />
-        
-        <!-- Token quota (approximate) - 10000 calls per 5 minutes per subscription -->
-        <quota-by-key calls="10000" bandwidth="1024000" renewal-period="300" counter-key="@(context.Subscription != null ? context.Subscription.Key : context.Request.IpAddress)" />
-        
-        <!-- Add correlation ID for tracing -->
-        <set-header name="x-ms-client-request-id" exists-action="skip">
-            <value>@(context.RequestId.ToString())</value>
-        </set-header>
-        
-        <!-- Log incoming request metadata -->
-        <trace source="AI Gateway" severity="information">
-            <message>@($"Incoming request: {context.Request.Method} {context.Request.Url.Path}")</message>
-            <metadata name="SubscriptionId" value="@(context.Subscription != null ? context.Subscription.Id : String.Empty)" />
-            <metadata name="ProductId" value="@(context.Product != null ? context.Product.Id : String.Empty)" />
-        </trace>
     </inbound>
     <backend>
         <!-- Retry policy for transient failures and rate limits -->
@@ -414,43 +490,6 @@ resource openAiApiPolicy 'Microsoft.ApiManagement/service/apis/policies@2023-09-
     </backend>
     <outbound>
         <base />
-        <!-- Extract and log token usage from response -->
-        <choose>
-            <when condition="@(context.Response.StatusCode == 200)">
-                <set-variable name="response-body" value="@(context.Response.Body.As&lt;JObject&gt;(preserveContent: true))" />
-                <set-variable name="prompt-tokens" value="@{
-                    var body = (JObject)context.Variables[&quot;response-body&quot;];
-                    return body?[&quot;usage&quot;]?[&quot;prompt_tokens&quot;]?.ToString() ?? &quot;0&quot;;
-                }" />
-                <set-variable name="completion-tokens" value="@{
-                    var body = (JObject)context.Variables[&quot;response-body&quot;];
-                    return body?[&quot;usage&quot;]?[&quot;completion_tokens&quot;]?.ToString() ?? &quot;0&quot;;
-                }" />
-                <set-variable name="total-tokens" value="@{
-                    var body = (JObject)context.Variables[&quot;response-body&quot;];
-                    return body?[&quot;usage&quot;]?[&quot;total_tokens&quot;]?.ToString() ?? &quot;0&quot;;
-                }" />
-                <!-- Add token usage headers for client visibility -->
-                <set-header name="x-openai-prompt-tokens" exists-action="override">
-                    <value>@((string)context.Variables["prompt-tokens"])</value>
-                </set-header>
-                <set-header name="x-openai-completion-tokens" exists-action="override">
-                    <value>@((string)context.Variables["completion-tokens"])</value>
-                </set-header>
-                <set-header name="x-openai-total-tokens" exists-action="override">
-                    <value>@((string)context.Variables["total-tokens"])</value>
-                </set-header>
-                <!-- Emit token metrics to Application Insights -->
-                <trace source="AI Gateway" severity="information">
-                    <message>Token Usage</message>
-                    <metadata name="PromptTokens" value="@((string)context.Variables[&quot;prompt-tokens&quot;])" />
-                    <metadata name="CompletionTokens" value="@((string)context.Variables[&quot;completion-tokens&quot;])" />
-                    <metadata name="TotalTokens" value="@((string)context.Variables[&quot;total-tokens&quot;])" />
-                    <metadata name="SubscriptionId" value="@(context.Subscription != null ? context.Subscription.Id : String.Empty)" />
-                    <metadata name="DeploymentId" value="@(context.Request.MatchedParameters.ContainsKey(&quot;deployment-id&quot;) ? context.Request.MatchedParameters[&quot;deployment-id&quot;] : String.Empty)" />
-                </trace>
-            </when>
-        </choose>
         <!-- Add CORS headers -->
         <set-header name="Access-Control-Allow-Origin" exists-action="override">
             <value>*</value>
@@ -458,12 +497,6 @@ resource openAiApiPolicy 'Microsoft.ApiManagement/service/apis/policies@2023-09-
     </outbound>
     <on-error>
         <base />
-        <!-- Log errors for troubleshooting -->
-        <trace source="AI Gateway" severity="error">
-            <message>@($"Error: {context.LastError.Message}")</message>
-            <metadata name="StatusCode" value="@(context.Response.StatusCode.ToString())" />
-            <metadata name="Reason" value="@(context.LastError.Reason)" />
-        </trace>
         <!-- Return friendly error response -->
         <choose>
             <when condition="@(context.Response.StatusCode == 429)">
@@ -472,14 +505,7 @@ resource openAiApiPolicy 'Microsoft.ApiManagement/service/apis/policies@2023-09-
                     <set-header name="Retry-After" exists-action="override">
                         <value>60</value>
                     </set-header>
-                    <set-body>@{
-                        return new JObject(
-                            new JProperty("error", new JObject(
-                                new JProperty("code", "RateLimitExceeded"),
-                                new JProperty("message", "API rate limit exceeded. Please retry after 60 seconds.")
-                            ))
-                        ).ToString();
-                    }</set-body>
+            <set-body>{"error":{"code":"RateLimitExceeded","message":"API rate limit exceeded. Please retry after 60 seconds."}}</set-body>
                 </return-response>
             </when>
         </choose>
@@ -530,4 +556,5 @@ output openAiApiPath string = openAiApi.properties.path
 
 // Output subscription key for internal apps (Container Apps authentication to APIM)
 // Best practice: Use subscription keys for APIM authentication, APIM uses managed identity to Azure OpenAI
+@secure()
 output internalSubscriptionKey string = internalSubscription.listSecrets().primaryKey
