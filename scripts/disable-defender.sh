@@ -70,12 +70,51 @@ fi
 az account set --subscription "$SUBSCRIPTION_ID" >/dev/null
 
 CHANGES_COUNT="$(jq '.pricingChanges | length' "$STATE_FILE")"
+ALREADY_ENABLED_COUNT="$(jq '.alreadyEnabled // [] | length' "$STATE_FILE")"
+
+# Report plans that were already enabled (we won't touch these)
+if [[ "$ALREADY_ENABLED_COUNT" -gt 0 ]]; then
+  echo "Plans that were already enabled before this sandbox (not rolling back):"
+  jq -r '.alreadyEnabled // [] | .[]' "$STATE_FILE" | while read -r plan; do
+    echo "  - $plan (was already Standard)"
+  done
+  echo ""
+fi
+
 if [[ "$CHANGES_COUNT" == "0" ]]; then
-  echo "No recorded pricing changes in $STATE_FILE. Nothing to do."
+  echo "No pricing changes were made by enable-defender.sh. Nothing to roll back."
   exit 0
 fi
 
 echo "Rolling back $CHANGES_COUNT Defender plan changes in subscription: $SUBSCRIPTION_ID"
+
+# Enable/disable a Defender plan using ARM REST (fallback from broken `az security pricing create`)
+set_defender_plan_tier() {
+  local plan_name="$1"
+  local tier="$2"
+  local base_uri="https://management.azure.com/subscriptions/${SUBSCRIPTION_ID}/providers/Microsoft.Security/pricings/${plan_name}"
+  local body
+  body="$(jq -n --arg tier "$tier" '{properties:{pricingTier:$tier}}')"
+
+  # Try CLI first (may work in some environments)
+  if az security pricing create --name "$plan_name" --tier "$tier" --output none 2>/dev/null; then
+    return 0
+  fi
+
+  echo "  (using az rest fallback)" >&2
+  local api_version
+  for api_version in 2023-01-01 2022-03-01; do
+    if az rest --method put \
+         --uri "${base_uri}?api-version=${api_version}" \
+         --body "$body" \
+         --output none 2>/dev/null; then
+      return 0
+    fi
+  done
+
+  echo "ERROR: Failed to set Defender plan '$plan_name' to '$tier' via CLI and REST." >&2
+  return 1
+}
 
 jq -c '.pricingChanges[]' "$STATE_FILE" | while read -r change; do
   PLAN_NAME="$(jq -r '.name' <<<"$change")"
@@ -91,7 +130,7 @@ jq -c '.pricingChanges[]' "$STATE_FILE" | while read -r change; do
   fi
 
   echo "- Setting $PLAN_NAME tier back to $PREV_TIER"
-  az security pricing create --name "$PLAN_NAME" --tier "$PREV_TIER" --output none
+  set_defender_plan_tier "$PLAN_NAME" "$PREV_TIER" || echo "  WARNING: Could not revert $PLAN_NAME" >&2
  done
 
 echo "Rollback complete. State file retained at: $STATE_FILE"

@@ -15,12 +15,12 @@ Usage:
 Notes:
 - Requires: azd, az (logged in)
 - Requires: you already ran `azd up` (or at least `azd provision`) so the azd env exists.
-- Uses `az security pricing list` to validate plan names before enabling.
+- Lists available Defender plans via `az rest` (ARM) with fallback to `az security pricing list`.
 - Creates a local state file under `.defender/` so you can roll back later with:
   `./scripts/disable-defender.sh --confirm`
 
 Discover plan names in your subscription:
-  az security pricing list -o table
+  az rest --method get --uri "https://management.azure.com/subscriptions/<subId>/providers/Microsoft.Security/pricings?api-version=2023-01-01" | jq
 EOF
 }
 
@@ -91,7 +91,36 @@ mkdir -p "$STATE_DIR"
 
 echo "Validating available Defender plans in subscription: $SUBSCRIPTION_ID"
 
-PRICING_JSON="$(az security pricing list -o json)"
+get_defender_pricings_json() {
+  # Azure CLI's `az security pricing list` has intermittently broken due to SDK signature
+  # changes (e.g., PricingsOperations.list now requiring scope_id). Use ARM REST as the
+  # stable source of truth, with a best-effort fallback to the CLI command.
+  local pricing_json
+  if pricing_json="$(az security pricing list -o json 2>/dev/null)"; then
+    echo "$pricing_json"
+    return 0
+  fi
+
+  echo "WARN: 'az security pricing list' failed; using 'az rest' to list Defender pricings." >&2
+
+  local base_uri="https://management.azure.com/subscriptions/${SUBSCRIPTION_ID}/providers/Microsoft.Security/pricings"
+  local api_version
+  local rest_json
+  for api_version in 2023-01-01 2022-03-01 2021-07-01-preview; do
+    if rest_json="$(az rest --method get --uri "${base_uri}?api-version=${api_version}" -o json 2>/dev/null)"; then
+      # Normalize to the same shape as `az security pricing list`: a JSON array of pricings.
+      jq -c '.value // []' <<<"$rest_json"
+      return 0
+    fi
+  done
+
+  echo "ERROR: Unable to list Defender pricings via Azure CLI or ARM REST." >&2
+  echo "- Verify you're logged in: az login" >&2
+  echo "- Verify subscription access: az account show" >&2
+  return 1
+}
+
+PRICING_JSON="$(get_defender_pricings_json)"
 AVAILABLE_PLANS_JSON="$(jq -c '[.[].name]' <<<"$PRICING_JSON")"
 
 desired_plans=()
@@ -124,7 +153,49 @@ plan_tier() {
   jq -r --arg p "$plan" '.[] | select(.name == $p) | .pricingTier // .properties.pricingTier // empty' <<<"$PRICING_JSON" | head -n1
 }
 
+# Enable a Defender plan using ARM REST (fallback from broken `az security pricing create`)
+# Some plans (like Api) require a subPlan property.
+enable_defender_plan() {
+  local plan_name="$1"
+  local tier="$2"
+  local sub_plan="${3:-}"
+  local base_uri="https://management.azure.com/subscriptions/${SUBSCRIPTION_ID}/providers/Microsoft.Security/pricings/${plan_name}"
+  local body
+
+  if [[ -n "$sub_plan" ]]; then
+    body="$(jq -n --arg tier "$tier" --arg subPlan "$sub_plan" '{properties:{pricingTier:$tier,subPlan:$subPlan}}')"
+  else
+    body="$(jq -n --arg tier "$tier" '{properties:{pricingTier:$tier}}')"
+  fi
+
+  # Try CLI first (may work in some environments)
+  if [[ -n "$sub_plan" ]]; then
+    if az security pricing create --name "$plan_name" --tier "$tier" --subplan "$sub_plan" --output none 2>/dev/null; then
+      return 0
+    fi
+  else
+    if az security pricing create --name "$plan_name" --tier "$tier" --output none 2>/dev/null; then
+      return 0
+    fi
+  fi
+
+  echo "  (using az rest fallback)" >&2
+  local api_version
+  for api_version in 2024-01-01 2023-01-01 2022-03-01; do
+    if az rest --method put \
+         --uri "${base_uri}?api-version=${api_version}" \
+         --body "$body" \
+         --output none 2>/dev/null; then
+      return 0
+    fi
+  done
+
+  echo "ERROR: Failed to enable Defender plan '$plan_name' via CLI and REST." >&2
+  return 1
+}
+
 pricing_changes=()
+already_enabled=()
 
 echo "Enabling Defender plans (subscription-wide)"
 for plan in "${desired_plans[@]}"; do
@@ -137,13 +208,24 @@ for plan in "${desired_plans[@]}"; do
   [[ -z "$current_tier" ]] && current_tier="Unknown"
 
   if [[ "$current_tier" == "Standard" ]]; then
-    echo "- $plan already Standard"
+    echo "- $plan already Standard (will not be changed by disable script)"
+    already_enabled+=("$plan")
     continue
   fi
 
-  echo "- Setting $plan tier to Standard (was: $current_tier)"
-  az security pricing create --name "$plan" --tier Standard --output none
-  pricing_changes+=("$plan:$current_tier")
+  # Determine sub-plan for plans that require it
+  # Defender for APIs requires P1-P5; P1 is the smallest/cheapest tier
+  sub_plan=""
+  if [[ "$plan" == "Api" ]]; then
+    sub_plan="P1"
+  fi
+
+  echo "- Setting $plan tier to Standard (was: $current_tier)${sub_plan:+ [subPlan: $sub_plan]}"
+  if enable_defender_plan "$plan" "Standard" "$sub_plan"; then
+    pricing_changes+=("$plan:$current_tier")
+  else
+    echo "  WARNING: Could not enable $plan" >&2
+  fi
 done
 
 # Write state file for rollback
@@ -154,6 +236,7 @@ jq -n \
   --arg timestamp "$timestamp" \
   --argjson desiredPlans "$(printf '%s\n' "${desired_plans[@]}" | jq -R . | jq -s .)" \
   --argjson availablePlans "$AVAILABLE_PLANS_JSON" \
+  --argjson alreadyEnabled "$(printf '%s\n' "${already_enabled[@]}" | jq -R . | jq -s .)" \
   --argjson pricingChanges "$(
       for entry in "${pricing_changes[@]}"; do
         name="${entry%%:*}"
@@ -161,7 +244,7 @@ jq -n \
         jq -n --arg name "$name" --arg prev "$prev" --arg next "Standard" '{name:$name, previousTier:$prev, newTier:$next}'
       done | jq -s .
     )" \
-  '{subscriptionId:$subscriptionId, environment:$environment, timestamp:$timestamp, desiredPlans:$desiredPlans, availablePlans:$availablePlans, pricingChanges:$pricingChanges}' \
+  '{subscriptionId:$subscriptionId, environment:$environment, timestamp:$timestamp, desiredPlans:$desiredPlans, availablePlans:$availablePlans, alreadyEnabled:$alreadyEnabled, pricingChanges:$pricingChanges}' \
   > "$STATE_FILE"
 
 echo "Wrote Defender enablement state: $STATE_FILE"
