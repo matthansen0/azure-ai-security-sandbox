@@ -79,10 +79,12 @@ A self-contained Azure AI security demonstration platform featuring a RAG (Retri
 |-----------|------------|-------------|
 | **Front Door + WAF** | Edge Security | OWASP managed rules, bot protection, DDoS mitigation |
 | **API Management** | AI Gateway | Centralized AI endpoint management with managed identity auth + retry logic (optional rate limiting / token usage logging) |
-| **Defender for AI** | AI Threat Detection | Prompt injection detection, jailbreak attempts, data exfiltration monitoring |
-| **Defender for Storage** | Data Protection | Malware scanning on upload, sensitive data discovery (PII/PCI/PHI) |
+| **Defender for AI** | AI Threat Detection | Tracked enhancement (not enabled by default): https://github.com/matthansen0/azure-ai-security-sandbox/issues/14 |
+| **Defender for APIs** | API Protection | Optional Defender for Cloud plan (enabled via add-on script) |
+| **Defender for Containers** | Container Threat Detection | Optional Defender for Cloud plan (enabled via add-on script) |
+| **Defender for Storage** | Data Protection | Optional (enabled via add-on script): malware scanning on upload, sensitive data discovery (PII/PCI/PHI) |
 | **Container Apps** | Serverless Containers | Auto-scaling, managed environment, no infrastructure to manage |
-| **Defender for Cosmos DB** | Database Security | SQL injection detection, anomalous access patterns, data exfiltration alerts |
+| **Defender for Cosmos DB** | Database Security | Optional Defender for Cloud plan (enabled via add-on script) |
 | **Managed Identities** | Zero Secrets | No keys in code—all services authenticate via Azure AD |
 
 ### 🚪 API Management as AI Gateway
@@ -187,8 +189,34 @@ azd up --parameter useAFD=false
 # Disable Azure API Management (AI Gateway)
 azd up --parameter useAPIM=false
 
-# Keep Defender for App Services and Cosmos DB opt-in (defaults are false)
-azd up --parameter enableDefenderForAppServices=false --parameter enableDefenderForCosmosDb=false
+
+### Optional: Enable Defender Plans (Add-on)
+
+This repo keeps subscription-wide Defender enablement out of the core `azd up` path.
+
+WARNING: Defender plans are enabled at the subscription scope (billing + coverage). If you run this in a shared subscription, it will apply beyond this sandbox.
+
+To enable the Defender plans used by this architecture (after `azd up`):
+
+```bash
+./scripts/enable-defender.sh --confirm
+```
+
+To roll back subscription-wide plan changes made by the script:
+
+```bash
+./scripts/disable-defender.sh --confirm
+```
+
+This add-on enables subscription-wide plans for: Containers, APIs, Storage, and Cosmos DB.
+
+It also applies **Defender for Storage advanced settings** (malware scanning + sensitive data discovery) to the sandbox storage account.
+
+Note on **Defender for AI**: availability and the underlying plan name can vary (and may appear under a different pricing name in `az security pricing list`). If you want it included, first list your available plans and then add the appropriate plan name via `additionalPricingPlanNames` in [infra/addons/defender/main.bicep](infra/addons/defender/main.bicep).
+
+Tracking work: [docs/issues/defender-for-ai.md](docs/issues/defender-for-ai.md)
+
+State tracking: the script writes a local state file under `.defender/` so you can roll back subscription-wide plan changes later.
 ```
 
 ### Troubleshooting
@@ -237,13 +265,6 @@ azd up
 
 #### Subscription-Level Deployment Conflicts
 
-If you see `InvalidDeploymentLocation` errors when switching regions, delete the stale deployment record:
-
-```bash
-az deployment sub delete --name subscriptionSecurity-<environment-name>
-azd up --location <new-region>
-```
-
 ### Deploy with Bash Script (Alternative)
 
 ```bash
@@ -269,7 +290,7 @@ az login
 7. **Azure Container Apps** running the RAG application (cloned from upstream and built in ACR at deploy time)
 8. **Azure API Management** as AI Gateway for managed identity auth + retry logic (optional rate limiting/token tracking) (set `useAPIM=false` to skip)
 9. **Azure Front Door + WAF** for edge protection (WAF defaults to Detection mode, set `useAFD=false` to skip)
-10. **Microsoft Defender** for Storage; subscription-level Defender for App Services and Cosmos DB remain opt-in
+10. **Microsoft Defender for Cloud** is not enabled in the core deployment; enable plans and per-resource Defender settings via the add-on script
 
 ### 💰 Cost Estimation
 
@@ -328,9 +349,12 @@ azure-ai-security-sandbox/
 │       ├── functions.bicep    # Azure Functions for doc processing
 │       ├── monitoring.bicep   # Log Analytics + App Insights
 │       ├── role-assignments.bicep # RBAC for managed identities
-│       ├── security.bicep     # Defender configurations
+│       ├── security.bicep     # DEPRECATED: Defender-for-Storage settings (moved to infra/addons/defender)
 │       ├── storage.bicep      # Storage account
-│       └── subscription-security.bicep # Subscription-level Defender
+│       └── subscription-security.bicep # DEPRECATED: subscription Defender plans (moved to infra/addons/defender)
+├── infra/addons/               # Optional post-deploy add-ons
+│   └── defender/               # Defender for Cloud enablement + storage settings
+├── scripts/                    # Post-deploy scripts (Defender enable/rollback)
 ├── docs/                       # Documentation
 ├── AGENTS.md                   # Instructions for AI coding agents
 ├── HOW_IT_WORKS.md             # Deep dive into what got deployed and why
@@ -346,14 +370,15 @@ azure-ai-security-sandbox/
 - [x] Container Apps deployment (builds from repo and pushes to ACR)
 - [x] Bicep-based infrastructure
 - [x] Front Door + WAF
-- [x] Defender for AI, Storage, Cosmos DB
+- [x] Defender for Cloud add-on (enable/rollback): Containers, APIs, Storage, Cosmos DB
+- [ ] Defender for AI add-on enablement (https://github.com/matthansen0/azure-ai-security-sandbox/issues/14)
 - [x] Azure OpenAI + AI Search integration
 - [ ] Ingestion pipeline (Container Apps Job)
 - [ ] Document upload and indexing pipeline
 - [ ] Chat with history
 
 ### v1.1 (Planned)
-- [ ] APIM + Defender for APIs
+- [ ] APIM + Defender for APIs validation (end-to-end)
 - [ ] Azure AI Content Safety integration
 - [ ] Real architecture diagrams (not ASCII)
 
@@ -368,6 +393,12 @@ azure-ai-security-sandbox/
 ### With azd (Recommended)
 ```bash
 azd down --force --purge
+```
+
+If you enabled Defender plans via the add-on script and want to revert subscription-wide changes, run:
+
+```bash
+./scripts/disable-defender.sh --confirm
 ```
 
 The `--purge` flag triggers a `postdown` hook that automatically purges soft-deleted Cognitive Services and APIM resources, preventing conflicts on future deployments.

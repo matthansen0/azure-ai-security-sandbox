@@ -53,7 +53,7 @@ CAIRA is a collection of reference architectures and Terraform modules that prov
    - Difficult to customize for different scenarios
 
 4. ❌ **Infrastructure Drift**: No declarative state management
-   - Manual tracking via `.defender_state.env` and `.azd_state.env`
+   - Manual tracking via `.defender/defender-state-<env>.json` and `.azure/`
    - Harder to detect configuration drift
 
 ---
@@ -71,7 +71,7 @@ CAIRA is a collection of reference architectures and Terraform modules that prov
 - **Impact**: Better idempotency, drift detection, and predictability
 
 ### 3. **Built-in Security Patterns**
-- **Current**: Manual security configuration via bash scripts and ARM API calls
+- **Current**: Manual security configuration via post-deploy bash scripts and Bicep add-ons
 - **CAIRA**: Security patterns baked into reference architectures
 - **Impact**: 
   - Key Vault integration by default
@@ -245,8 +245,8 @@ User → Terraform Configuration → CAIRA Modules
 | Cosmos DB | azd (upstream) | CAIRA Cosmos DB module |
 | Storage Account | azd (upstream) | CAIRA Storage module |
 | Front Door + WAF | Bash + az CLI | Terraform azurerm_cdn_* |
-| Defender for AI | Bash + ARM API | Terraform azurerm_security_* |
-| Defender for Storage | Bash + ARM API | Terraform azurerm_security_* |
+| Defender for AI | Tracked enhancement (not enabled by default): https://github.com/matthansen0/azure-ai-security-sandbox/issues/14 | Terraform azurerm_security_* |
+| Defender for Storage | Optional add-on (Bicep + script): `./scripts/enable-defender.sh --confirm` | Terraform azurerm_security_* |
 | Key Vault | azd (upstream) | CAIRA Key Vault module |
 | Log Analytics | azd (upstream) | CAIRA Log Analytics module |
 

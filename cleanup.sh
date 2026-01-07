@@ -96,33 +96,12 @@ handle_defender_plans() {
     echo
     echo -e "${YELLOW}Defender Plan Settings${NC}"
     echo "─────────────────────────"
-    echo "The following Defender plans may have been enabled by this deployment:"
-    echo "  - Defender for App Services"
-    echo "  - Defender for Cosmos DB"
+    echo "If you enabled subscription-wide Defender plans via enable-defender.sh,"
+    echo "you can roll them back by running:"
+    echo "  ./scripts/disable-defender.sh --confirm"
     echo
     echo -e "${YELLOW}Note:${NC} These are subscription-wide settings that affect all resources."
     echo "They will NOT be automatically disabled to avoid impacting other workloads."
-    echo
-    
-    read -rp "Would you like to disable Defender for App Services? [y/N]: " disable_appsvc
-    if [[ "${disable_appsvc,,}" == "y" ]]; then
-        echo "Disabling Defender for App Services..."
-        az security pricing create \
-            --name AppServices \
-            --tier Free \
-            --output none || echo "  (Failed or not available)"
-        echo -e "${GREEN}✓ Defender for App Services disabled${NC}"
-    fi
-    
-    read -rp "Would you like to disable Defender for Cosmos DB? [y/N]: " disable_cosmos
-    if [[ "${disable_cosmos,,}" == "y" ]]; then
-        echo "Disabling Defender for Cosmos DB..."
-        az security pricing create \
-            --name CosmosDbs \
-            --tier Free \
-            --output none || echo "  (Failed or not available)"
-        echo -e "${GREEN}✓ Defender for Cosmos DB disabled${NC}"
-    fi
 }
 
 # Clean up Front Door if it exists at subscription level

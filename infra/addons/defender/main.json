@@ -1,0 +1,111 @@
+{
+  "$schema": "https://schema.management.azure.com/schemas/2018-05-01/subscriptionDeploymentTemplate.json#",
+  "contentVersion": "1.0.0.0",
+  "metadata": {
+    "_generator": {
+      "name": "bicep",
+      "version": "0.39.26.7824",
+      "templateHash": "9828915131115704732"
+    }
+  },
+  "parameters": {
+    "confirmSubscriptionWideEnablement": {
+      "type": "bool",
+      "defaultValue": false,
+      "metadata": {
+        "description": "Guardrail. Must be set to true to enable any Defender plans in this subscription."
+      }
+    },
+    "enableDefenderForAppServices": {
+      "type": "bool",
+      "defaultValue": true,
+      "metadata": {
+        "description": "Enable Defender for App Services plan (subscription-wide). Relevant if you deploy App Service / Functions in this subscription."
+      }
+    },
+    "enableDefenderForCosmosDb": {
+      "type": "bool",
+      "defaultValue": true,
+      "metadata": {
+        "description": "Enable Defender for Cosmos DB plan (subscription-wide)."
+      }
+    },
+    "enableDefenderForContainers": {
+      "type": "bool",
+      "defaultValue": true,
+      "metadata": {
+        "description": "Enable Defender for Containers plan (subscription-wide). Relevant if you deploy Container Apps / AKS / container workloads in this subscription."
+      }
+    },
+    "enableDefenderForApis": {
+      "type": "bool",
+      "defaultValue": true,
+      "metadata": {
+        "description": "Enable Defender for APIs plan (subscription-wide). Relevant for API posture/protection scenarios when supported in your subscription."
+      }
+    },
+    "enableDefenderForStorage": {
+      "type": "bool",
+      "defaultValue": true,
+      "metadata": {
+        "description": "Enable Defender for Storage plan (subscription-wide). Resource-level settings (malware scanning / SDD) are configured separately per storage account."
+      }
+    },
+    "additionalPricingPlanNames": {
+      "type": "array",
+      "defaultValue": [],
+      "metadata": {
+        "description": "Optional additional Defender pricing plan names to enable (subscription-wide). Use `az security pricing list` to discover plan names in your subscription."
+      }
+    }
+  },
+  "variables": {
+    "doEnable": "[parameters('confirmSubscriptionWideEnablement')]",
+    "requestedPricingPlanNames": "[concat(if(parameters('enableDefenderForAppServices'), createArray('AppServices'), createArray()), if(parameters('enableDefenderForCosmosDb'), createArray('CosmosDbs'), createArray()), if(parameters('enableDefenderForContainers'), createArray('Containers'), createArray()), if(parameters('enableDefenderForApis'), createArray('Api'), createArray()), if(parameters('enableDefenderForStorage'), createArray('StorageAccounts'), createArray()), parameters('additionalPricingPlanNames'))]"
+  },
+  "resources": [
+    {
+      "copy": {
+        "name": "defenderPricingPlans",
+        "count": "[length(variables('requestedPricingPlanNames'))]"
+      },
+      "condition": "[variables('doEnable')]",
+      "type": "Microsoft.Security/pricings",
+      "apiVersion": "2024-01-01",
+      "name": "[variables('requestedPricingPlanNames')[copyIndex()]]",
+      "properties": {
+        "pricingTier": "Standard"
+      }
+    }
+  ],
+  "outputs": {
+    "subscriptionWideEnablementConfirmed": {
+      "type": "bool",
+      "value": "[parameters('confirmSubscriptionWideEnablement')]"
+    },
+    "defenderForAppServicesEnabled": {
+      "type": "bool",
+      "value": "[and(variables('doEnable'), parameters('enableDefenderForAppServices'))]"
+    },
+    "defenderForCosmosDbEnabled": {
+      "type": "bool",
+      "value": "[and(variables('doEnable'), parameters('enableDefenderForCosmosDb'))]"
+    },
+    "defenderForContainersEnabled": {
+      "type": "bool",
+      "value": "[and(variables('doEnable'), parameters('enableDefenderForContainers'))]"
+    },
+    "defenderForApisEnabled": {
+      "type": "bool",
+      "value": "[and(variables('doEnable'), parameters('enableDefenderForApis'))]"
+    },
+    "defenderForStorageEnabled": {
+      "type": "bool",
+      "value": "[and(variables('doEnable'), parameters('enableDefenderForStorage'))]"
+    },
+    "additionalPricingPlanNamesEnabled": {
+      "type": "array",
+      "value": "[if(variables('doEnable'), parameters('additionalPricingPlanNames'), createArray())]"
+    }
+  }
+}

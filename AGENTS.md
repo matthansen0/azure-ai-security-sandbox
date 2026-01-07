@@ -46,9 +46,20 @@ User → Azure Front Door (WAF) → Azure API Management (AI Gateway) → Contai
   - `front-door.bicep` - AFD + WAF policy
   - `monitoring.bicep` - Log Analytics + App Insights
   - `role-assignments.bicep` - RBAC for managed identities
-  - `search.bicep` - Azure AI Search
-  - `security.bicep` - Key Vault (optional)
+  - `security.bicep` - DEPRECATED (Defender settings moved to add-on)
+  - `subscription-security.bicep` - DEPRECATED (subscription-wide Defender plans moved to add-on)
   - `storage.bicep` - Blob storage for documents
+
+### Optional Defender Add-on
+
+This repo intentionally makes **no Defender for Cloud changes** during `azd up`. To enable Defender after deployment:
+
+- Enable relevant Defender plans (except Defender for AI) and apply Defender for Storage advanced settings:
+  - [scripts/enable-defender.sh](scripts/enable-defender.sh)
+- Roll back subscription-wide plan changes made by the enable script:
+  - [scripts/disable-defender.sh](scripts/disable-defender.sh)
+
+State tracking is written locally under `.defender/` (ignored by git).
 
 ### Application (`/app`)
 - `backend/Dockerfile` - Container build configuration
