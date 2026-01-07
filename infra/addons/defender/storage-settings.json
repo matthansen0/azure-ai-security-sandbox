@@ -1,0 +1,54 @@
+{
+  "$schema": "https://schema.management.azure.com/schemas/2019-04-01/deploymentTemplate.json#",
+  "contentVersion": "1.0.0.0",
+  "metadata": {
+    "_generator": {
+      "name": "bicep",
+      "version": "0.39.26.7824",
+      "templateHash": "5316136654231124736"
+    }
+  },
+  "parameters": {
+    "storageAccountName": {
+      "type": "string",
+      "metadata": {
+        "description": "Name of the Storage Account to configure."
+      }
+    },
+    "enableDefenderForStorageSettings": {
+      "type": "bool",
+      "defaultValue": true,
+      "metadata": {
+        "description": "Enable Defender for Storage advanced settings on this storage account."
+      }
+    }
+  },
+  "resources": [
+    {
+      "condition": "[parameters('enableDefenderForStorageSettings')]",
+      "type": "Microsoft.Security/defenderForStorageSettings",
+      "apiVersion": "2022-12-01-preview",
+      "scope": "[format('Microsoft.Storage/storageAccounts/{0}', parameters('storageAccountName'))]",
+      "name": "current",
+      "properties": {
+        "isEnabled": true,
+        "overrideSubscriptionLevelSettings": true,
+        "malwareScanning": {
+          "onUpload": {
+            "isEnabled": true,
+            "capGBPerMonth": 5000
+          }
+        },
+        "sensitiveDataDiscovery": {
+          "isEnabled": true
+        }
+      }
+    }
+  ],
+  "outputs": {
+    "defenderForStorageSettingsEnabled": {
+      "type": "bool",
+      "value": "[parameters('enableDefenderForStorageSettings')]"
+    }
+  }
+}

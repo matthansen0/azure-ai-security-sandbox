@@ -110,8 +110,8 @@ terraform destroy -var-file="environments/dev/terraform.tfvars"
 | `./deploy-sample-and-secure.sh` | `terraform apply` |
 | `./azureAISecurityDeploy.sh` | Integrated in Terraform config |
 | `./cleanup.sh` | `terraform destroy` |
-| `.azd_state.env` | Terraform state file |
-| `.defender_state.env` | Terraform state file |
+| `.azure/` | Terraform state file |
+| `.defender/defender-state-<env>.json` | Terraform state file |
 | Bash script logic | Terraform configuration |
 
 ## Feature Comparison
@@ -124,8 +124,8 @@ terraform destroy -var-file="environments/dev/terraform.tfvars"
 | Cosmos DB | azd deployment | Terraform azurerm_cosmosdb_account |
 | Storage | azd deployment | CAIRA Storage module |
 | Front Door + WAF | Bash + az CLI | Terraform azurerm_cdn_* |
-| Defender for AI | Bash + ARM API | Terraform azurerm_security_* |
-| Defender for Storage | Bash + ARM API | Terraform with advanced config |
+| Defender for AI | Tracked enhancement (not enabled by default): https://github.com/matthansen0/azure-ai-security-sandbox/issues/14 | Terraform azurerm_security_* |
+| Defender for Storage | Optional add-on (Bicep + script): `./scripts/enable-defender.sh --confirm` | Terraform with advanced config |
 | Key Vault | azd deployment | CAIRA Key Vault module |
 | RBAC | Manual/limited | Built-in with CAIRA |
 | Private Endpoints | Not included | Available in CAIRA standard/private |

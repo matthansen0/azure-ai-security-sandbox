@@ -436,6 +436,8 @@ resource openaiSdkEmbeddingsV1Policy 'Microsoft.ApiManagement/service/apis/opera
 resource openAiApiPolicy 'Microsoft.ApiManagement/service/apis/policies@2023-09-01-preview' = {
   parent: openAiApi
   name: 'policy'
+  // Ensure the named value exists before policy validation
+  dependsOn: [internalClientKeyNamedValue]
   properties: {
     format: 'xml'
     value: '''

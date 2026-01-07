@@ -1,4 +1,12 @@
-// security.bicep - Resource-level security configurations
+// security.bicep - DEPRECATED
+//
+// This module previously enabled Defender for Storage advanced settings as part of the core deployment.
+// Defender enablement has been moved to an explicit post-deploy add-on to avoid accidental subscription-wide
+// or resource-level security/billing changes during `azd up`.
+//
+// Use instead:
+// - infra/addons/defender/storage-settings.bicep
+// - scripts/enable-defender.sh
 
 param storageAccountName string
 
@@ -26,6 +34,5 @@ resource defenderForStorage 'Microsoft.Security/defenderForStorageSettings@2022-
   }
 }
 
-// Note: Defender for AI is configured at the subscription level via workspace settings
-// The Log Analytics workspace is used to collect Defender for AI alerts
-// This is handled by the security workspace setting in subscription-security.bicep
+// Note: Defender for AI enablement is not implemented here. Track status:
+// https://github.com/matthansen0/azure-ai-security-sandbox/issues/14

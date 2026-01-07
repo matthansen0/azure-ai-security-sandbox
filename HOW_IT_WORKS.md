@@ -298,7 +298,7 @@ This is why our `postdown` hook purges soft-deleted resources.
 
 ## Layer 5: The Knowledge Base (AI Search + Storage)
 
-**Files:** [infra/modules/search.bicep](infra/modules/search.bicep), [infra/modules/storage.bicep](infra/modules/storage.bicep)
+**Files:** [infra/modules/ai-services.bicep](infra/modules/ai-services.bicep) (AI Search), [infra/modules/storage.bicep](infra/modules/storage.bicep)
 
 ### What We Deployed
 
@@ -327,13 +327,18 @@ deleteRetentionPolicy: {
 
 Soft delete for blobs - recover from accidental deletions.
 
-**Defender for Storage enabled:**
-```bicep
-// Enabled in security.bicep
-resource defenderForStorage 'Microsoft.Security/defenderForStorageSettings@2022-12-01-preview'
+**Defender for Storage (optional add-on):**
+
+This repo does **not** enable Defender by default during `azd up`. To enable Defender for Cloud plans and apply Defender for Storage advanced settings (malware scanning + sensitive data discovery), run:
+
+```bash
+./scripts/enable-defender.sh --confirm
 ```
 
-Scans uploaded files for malware. Important since users might upload documents.
+The storage-specific configuration is applied via:
+- [infra/addons/defender/storage-settings.bicep](infra/addons/defender/storage-settings.bicep)
+
+This scans uploaded files for malware and can help detect sensitive data. Important since users might upload documents.
 
 ### Key Settings You Should Know
 

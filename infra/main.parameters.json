@@ -17,12 +17,6 @@
     "principalType": {
       "value": "${AZURE_PRINCIPAL_TYPE=User}"
     },
-    "enableDefenderForAppServices": {
-      "value": true
-    },
-    "enableDefenderForCosmosDb": {
-      "value": true
-    },
     "restoreSoftDeletedOpenAi": {
       "value": "${restoreSoftDeletedOpenAi=false}"
     },

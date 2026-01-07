@@ -137,7 +137,7 @@ This assessment provides:
 ### Short-term (Weeks 2-4)
 - [ ] Create functional Terraform POC
 - [ ] Implement core CAIRA modules
-- [ ] Add security features (Front Door, Defender)
+- [ ] Add security features (Front Door, Defender via explicit post-deploy add-on)
 - [ ] Test deployment scenarios
 
 ### Medium-term (Weeks 5-8)

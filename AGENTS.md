@@ -46,9 +46,20 @@ User → Azure Front Door (WAF) → Azure API Management (AI Gateway) → Contai
   - `front-door.bicep` - AFD + WAF policy
   - `monitoring.bicep` - Log Analytics + App Insights
   - `role-assignments.bicep` - RBAC for managed identities
-  - `search.bicep` - Azure AI Search
-  - `security.bicep` - Key Vault (optional)
+  - `security.bicep` - DEPRECATED (Defender settings moved to add-on)
+  - `subscription-security.bicep` - DEPRECATED (subscription-wide Defender plans moved to add-on)
   - `storage.bicep` - Blob storage for documents
+
+### Optional Defender Add-on
+
+This repo intentionally makes **no Defender for Cloud changes** during `azd up`. To enable Defender after deployment:
+
+- Enable relevant Defender plans (except Defender for AI) and apply Defender for Storage advanced settings:
+  - [scripts/enable-defender.sh](scripts/enable-defender.sh)
+- Roll back subscription-wide plan changes made by the enable script:
+  - [scripts/disable-defender.sh](scripts/disable-defender.sh)
+
+State tracking is written locally under `.defender/` (ignored by git).
 
 ### Application (`/app`)
 - `backend/Dockerfile` - Container build configuration
@@ -226,6 +237,7 @@ When adding new security features:
 | Container not starting | Check ACR image exists, check Container Apps logs |
 | `openai.AuthenticationError` | APIM enabled but `OPENAI_HOST` not set to `azure_custom` - redeploy with latest `container-apps.bicep` |
 | `openai.NotFoundError` | See "APIM + OpenAI SDK Integration" section below |
+| APIM `internal-client-key` not found | Ensure `openAiApiPolicy` has `dependsOn: [internalClientKeyNamedValue]` |
 
 ## APIM Policy Gotchas (Learned the Hard Way)
 
@@ -267,6 +279,27 @@ curl -sS -X POST "https://api.loganalytics.io/v1/workspaces/${WORKSPACE_ID}/quer
 ```
 
 If you see `ExpressionValueValidationFailure`, simplify the policy to the essentials (auth + forward + managed identity) and re-introduce tracing/rate-limit/token parsing incrementally with APIM-supported expression patterns.
+
+### APIM Named Value `{{internal-client-key}}` Not Found
+
+**Error during `azd up`:**
+```
+ValidationError: Error in element 'when' on line 20, column 8: Cannot find a property 'internal-client-key'
+```
+
+**Cause:** The API policy XML references `{{internal-client-key}}` (a named value), but APIM validates policies at deployment time. If the named value resource doesn't exist yet, validation fails.
+
+**Fix:** Add explicit `dependsOn` to ensure the named value is created before the policy:
+```bicep
+resource openAiApiPolicy 'Microsoft.ApiManagement/service/apis/policies@2023-09-01-preview' = {
+  parent: openAiApi
+  name: 'policy'
+  dependsOn: [internalClientKeyNamedValue]  // <-- Critical!
+  properties: { ... }
+}
+```
+
+Bicep's implicit dependency resolution doesn't work here because the policy XML is a raw string—Bicep doesn't parse `{{...}}` references inside it.
 
 ## APIM + OpenAI SDK Integration (Critical!)
 

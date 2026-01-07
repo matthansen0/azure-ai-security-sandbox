@@ -17,12 +17,6 @@ param openAiLocation string = location
 @description('Tags to apply to all resources')
 param tags object = {}
 
-@description('Enable Defender for App Services at subscription level')
-param enableDefenderForAppServices bool = false
-
-@description('Enable Defender for Cosmos DB at subscription level')
-param enableDefenderForCosmosDb bool = false
-
 @description('Set to true to restore a soft-deleted OpenAI resource with the same name')
 param restoreSoftDeletedOpenAi bool = false
 
@@ -231,24 +225,9 @@ module frontDoor 'modules/front-door.bicep' = if (useAFD) {
   }
 }
 
-// Security configurations (Defender plans)
-module security 'modules/security.bicep' = {
-  name: 'security'
-  scope: rg
-  params: {
-    storageAccountName: storage.outputs.storageAccountName
-  }
-}
+// Defender for Cloud enablement is intentionally NOT performed in the core deployment.
+// Use the post-deploy add-on script: ./scripts/enable-defender.sh --confirm
 
-// Subscription-level Defender plans (optional)
-module subscriptionSecurity 'modules/subscription-security.bicep' = {
-  name: 'subscriptionSecurity-${environmentName}'
-  scope: subscription()
-  params: {
-    enableDefenderForAppServices: enableDefenderForAppServices
-    enableDefenderForCosmosDb: enableDefenderForCosmosDb
-  }
-}
 
 // Outputs
 output RESOURCE_GROUP_NAME string = rg.name

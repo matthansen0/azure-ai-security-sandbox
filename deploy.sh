@@ -78,15 +78,8 @@ get_parameters() {
     # OpenAI location (can be different)
     AZURE_OPENAI_LOCATION="${AZURE_OPENAI_LOCATION:-$AZURE_LOCATION}"
     
-    # Defender options
-    echo
-    read -rp "Enable Defender for App Services (subscription-wide)? [Y/n]: " defender_appsvc
-    ENABLE_DEFENDER_APPSVC="true"
-    [[ "${defender_appsvc,,}" == "n" ]] && ENABLE_DEFENDER_APPSVC="false"
-    
-    read -rp "Enable Defender for Cosmos DB (subscription-wide)? [Y/n]: " defender_cosmos
-    ENABLE_DEFENDER_COSMOS="true"
-    [[ "${defender_cosmos,,}" == "n" ]] && ENABLE_DEFENDER_COSMOS="false"
+    # NOTE: Subscription-wide Defender plans are intentionally NOT enabled inline.
+    # Use ./scripts/enable-defender.sh --confirm after deployment if desired.
 }
 
 # Deploy infrastructure
@@ -106,8 +99,6 @@ deploy_infrastructure() {
             environmentName="$AZURE_ENV_NAME" \
             location="$AZURE_LOCATION" \
             openAiLocation="$AZURE_OPENAI_LOCATION" \
-            enableDefenderForAppServices="$ENABLE_DEFENDER_APPSVC" \
-            enableDefenderForCosmosDb="$ENABLE_DEFENDER_COSMOS" \
         --output json > /tmp/deployment_output.json
     
     # Extract outputs
@@ -189,11 +180,11 @@ print_summary() {
     echo
     echo -e "${YELLOW}Security Features Enabled:${NC}"
     echo "  ✓ Azure Front Door with WAF (OWASP 3.2 + Bot Protection)"
-    echo "  ✓ Defender for Storage (malware scanning + sensitive data)"
-    echo "  ✓ Defender for AI (via Log Analytics)"
-    [[ "$ENABLE_DEFENDER_APPSVC" == "true" ]] && echo "  ✓ Defender for App Services (subscription-wide)"
-    [[ "$ENABLE_DEFENDER_COSMOS" == "true" ]] && echo "  ✓ Defender for Cosmos DB (subscription-wide)"
     echo "  ✓ Managed Identity (no secrets in code)"
+    echo
+    echo -e "${YELLOW}Optional Defender (Post-Deploy Add-On):${NC}"
+    echo "  Run: ./scripts/enable-defender.sh --confirm"
+    echo "  To enable Defender for Containers, APIs, Storage, Cosmos DB."
     echo
     echo -e "${YELLOW}Next Steps:${NC}"
     echo "  1. Wait a few minutes for the app to warm up"
@@ -211,8 +202,6 @@ AZURE_LOCATION="$AZURE_LOCATION"
 RESOURCE_GROUP="$RESOURCE_GROUP"
 APP_SERVICE_NAME="$APP_SERVICE_NAME"
 FRONTDOOR_URL="$FRONTDOOR_URL"
-ENABLE_DEFENDER_APPSVC="$ENABLE_DEFENDER_APPSVC"
-ENABLE_DEFENDER_COSMOS="$ENABLE_DEFENDER_COSMOS"
 EOF
 }
 
