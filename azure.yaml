@@ -98,17 +98,37 @@ hooks:
       
       # Get subscription ID
       SUBSCRIPTION_ID=$(az account show --query id -o tsv)
+
+      # IMPORTANT: Purge ONLY resources associated with this azd environment.
+      # Older versions of this hook purged *all* soft-deleted OpenAI/APIM resources
+      # in the subscription, which is risky in shared subscriptions.
+      EXPECTED_COG_NAME="${AZURE_OPENAI_SERVICE:-}"
+      EXPECTED_APIM_NAME="${APIM_SERVICE_NAME:-}"
+      if [ -z "$EXPECTED_COG_NAME" ] && [ -z "$EXPECTED_APIM_NAME" ]; then
+        echo "No environment-scoped resource names found (AZURE_OPENAI_SERVICE/APIM_SERVICE_NAME not set)."
+        echo "Skipping purge to avoid subscription-wide deletion."
+        exit 0
+      fi
       
       # Purge soft-deleted Cognitive Services (Azure OpenAI)
       echo "Checking for soft-deleted Cognitive Services..."
       DELETED_COG=$(az cognitiveservices account list-deleted --subscription "$SUBSCRIPTION_ID" -o json 2>/dev/null)
       if [ -n "$DELETED_COG" ] && [ "$DELETED_COG" != "[]" ]; then
-        echo "$DELETED_COG" | jq -r '.[] | "\(.name) \(.location)"' | while read -r NAME LOCATION; do
-          if [ -n "$NAME" ]; then
-            echo "Purging Cognitive Services: $NAME in $LOCATION"
-            az cognitiveservices account purge --name "$NAME" --location "$LOCATION" --subscription "$SUBSCRIPTION_ID" 2>/dev/null || true
+        if [ -n "$EXPECTED_COG_NAME" ]; then
+          MATCHING_COG=$(echo "$DELETED_COG" | jq -r --arg name "$EXPECTED_COG_NAME" '.[] | select(.name == $name) | "\(.name) \(.location)"')
+          if [ -n "$MATCHING_COG" ]; then
+            echo "$MATCHING_COG" | while read -r NAME LOCATION; do
+              if [ -n "$NAME" ]; then
+                echo "Purging Cognitive Services: $NAME in $LOCATION"
+                az cognitiveservices account purge --name "$NAME" --location "$LOCATION" --subscription "$SUBSCRIPTION_ID" 2>/dev/null || true
+              fi
+            done
+          else
+            echo "No soft-deleted Cognitive Services found for: $EXPECTED_COG_NAME"
           fi
-        done
+        else
+          echo "AZURE_OPENAI_SERVICE not set. Skipping Cognitive Services purge."
+        fi
       else
         echo "No soft-deleted Cognitive Services found."
       fi
@@ -117,12 +137,21 @@ hooks:
       echo "Checking for soft-deleted API Management services..."
       DELETED_APIM=$(az apim deletedservice list --subscription "$SUBSCRIPTION_ID" -o json 2>/dev/null)
       if [ -n "$DELETED_APIM" ] && [ "$DELETED_APIM" != "[]" ]; then
-        echo "$DELETED_APIM" | jq -r '.[] | "\(.name) \(.location)"' | while read -r NAME LOCATION; do
-          if [ -n "$NAME" ]; then
-            echo "Purging API Management: $NAME in $LOCATION"
-            az apim deletedservice purge --service-name "$NAME" --location "$LOCATION" --subscription "$SUBSCRIPTION_ID" 2>/dev/null || true
+        if [ -n "$EXPECTED_APIM_NAME" ]; then
+          MATCHING_APIM=$(echo "$DELETED_APIM" | jq -r --arg name "$EXPECTED_APIM_NAME" '.[] | select(.name == $name) | "\(.name) \(.location)"')
+          if [ -n "$MATCHING_APIM" ]; then
+            echo "$MATCHING_APIM" | while read -r NAME LOCATION; do
+              if [ -n "$NAME" ]; then
+                echo "Purging API Management: $NAME in $LOCATION"
+                az apim deletedservice purge --service-name "$NAME" --location "$LOCATION" --subscription "$SUBSCRIPTION_ID" 2>/dev/null || true
+              fi
+            done
+          else
+            echo "No soft-deleted API Management services found for: $EXPECTED_APIM_NAME"
           fi
-        done
+        else
+          echo "APIM_SERVICE_NAME not set. Skipping API Management purge."
+        fi
       else
         echo "No soft-deleted API Management services found."
       fi
