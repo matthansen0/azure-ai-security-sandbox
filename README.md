@@ -23,9 +23,6 @@
 
 A self-contained Azure AI security demonstration platform featuring a RAG (Retrieval-Augmented Generation) chat application with enterprise-grade security controls. This project deploys everything from scratch using Bicep, pulls the [azure-search-openai-demo](https://github.com/Azure-Samples/azure-search-openai-demo) app from upstream at build time, builds it in Azure Container Registry, and deploys to Azure Container Apps with optional Azure Front Door + WAF. **No application code is stored in this repo**—only infrastructure and a minimal Dockerfile.
 
-> [!WARNING]  
-> This repo is under active development for v1.0 release.
-
 ## 🏗️ Architecture
 
 ```

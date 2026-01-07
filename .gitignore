@@ -51,7 +51,7 @@ yarn-error.log*
 # Deployment state
 .deployment_state.env
 
-# Defender add-on local state
+# Defender for Cloud local state (created by scripts/enable-defender.sh)
 .defender/
 
 # OS
