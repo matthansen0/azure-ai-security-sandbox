@@ -88,7 +88,7 @@ State tracking is written locally under `.defender/` (ignored by git).
 | `infra/main.bicep` | All configurable parameters live here |
 | `infra/modules/api-management.bicep` | AI Gateway policies - auth + retry (optional rate limits/token logging) |
 | `infra/modules/front-door.bicep` | WAF rules and mode configuration |
-| `deploy.sh` / `cleanup.sh` | Manual deployment scripts (prefer azd) |
+
 
 ## Common Operations
 
@@ -427,6 +427,3 @@ Container App                    APIM                         Azure OpenAI
 
 - [README.md](README.md) - User-facing documentation
 - [HOW_IT_WORKS.md](HOW_IT_WORKS.md) - Deep dive into every component and why
-- [EXECUTIVE_SUMMARY.md](EXECUTIVE_SUMMARY.md) - Business justification
-- [CAIRA_ASSESSMENT.md](CAIRA_ASSESSMENT.md) - Security risk assessment
-- [MIGRATION_GUIDE.md](MIGRATION_GUIDE.md) - Moving from demo to production

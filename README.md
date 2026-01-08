@@ -273,7 +273,7 @@ cd azure-ai-security-sandbox
 az login
 
 # Deploy everything (interactive prompts for region selection)
-./deploy.sh
+azd up
 ```
 
 ### What Gets Deployed
@@ -356,8 +356,6 @@ azure-ai-security-sandbox/
 ├── AGENTS.md                   # Instructions for AI coding agents
 ├── HOW_IT_WORKS.md             # Deep dive into what got deployed and why
 ├── azure.yaml                  # Azure Developer CLI configuration
-├── deploy.sh                   # Bash deployment script
-├── cleanup.sh                  # Resource cleanup script
 └── README.md
 ```
 
@@ -399,13 +397,6 @@ If you enabled Defender plans via the add-on script and want to revert subscript
 ```
 
 The `--purge` flag triggers a `postdown` hook that automatically purges soft-deleted Cognitive Services and APIM resources, preventing conflicts on future deployments.
-
-### With Bash Script
-```bash
-./cleanup.sh
-```
-
-Both methods remove all deployed resources and optionally revert any subscription-wide Defender plan changes.
 
 ## 📖 Additional Resources
 
