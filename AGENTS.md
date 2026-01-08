@@ -77,8 +77,7 @@ State tracking is written locally under `.defender/` (ignored by git).
 > - To customize the app, you'd need to modify the Dockerfile to copy local code instead
 
 ### Documentation (`/docs`)
-- `CAIRA_INDEX.md` - Cloud AI Risk Assessment index
-- Supporting security assessment documents
+- `issues/` - Tracked issues and enhancement documentation
 
 ## Key Files to Understand
 
