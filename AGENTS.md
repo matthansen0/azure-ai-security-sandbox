@@ -232,7 +232,8 @@ When adding new security features:
 | Most resources | < 30 seconds |
 | Cosmos DB | ~1-2 minutes |
 | APIM (BasicV2) | ~5-10 minutes |
-
+| AI Foundry Hub + Project | ~2-3 minutes |
+| Agent Container App | ~3-5 minutes |
 | Front Door | ~10-15 minutes |
 | AFD WAF propagation | ~30-45 minutes |
 
@@ -244,6 +245,7 @@ When adding new security features:
 - ❌ **Don't hardcode secrets** - Use Key Vault or azd env variables
 - ❌ **Don't forget diagnostic settings** - All resources need logging
 - ❌ **Don't use Consumption APIM** - Missing features needed for AI Gateway
+- ❌ **Don't give agents write access to real infrastructure** - Use mock data or read-only roles
 
 ## Troubleshooting Quick Reference
 

@@ -75,3 +75,4 @@ htmlcov/
 infra/*.json
 !infra/abbreviations.json
 !infra/main.parameters.json
+.venv-tests/

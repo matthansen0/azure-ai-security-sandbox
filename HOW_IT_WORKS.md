@@ -17,6 +17,7 @@ You deployed a bunch of Azure resources with `azd up`. Here's what they do, why 
 - [Layer 6: The Memory (Cosmos DB)](#layer-6-the-memory-cosmos-db)
 - [Layer 7: Identity & Access (Managed Identity + RBAC)](#layer-7-identity--access-managed-identity--rbac)
 - [Layer 8: Observability (Logging & Monitoring)](#layer-8-observability-logging--monitoring)
+- [Layer 9: AI Agents (Optional)](#layer-9-ai-agents-optional)
 - [Putting It All Together](#putting-it-all-together)
 
 ---
@@ -559,6 +560,96 @@ This isn't optional for security. You need logs for:
 
 ---
 
+## Layer 9: AI Agents (Optional)
+
+**Files:** [infra/modules/agents/](infra/modules/agents/), [agents/it-admin/](agents/it-admin/)
+
+### What We Deployed
+
+When you run `azd up --parameter useAgents=true`, you get:
+
+- **AI Foundry Hub + Project** - Management plane for AI agents
+- **Key Vault** - Secrets storage for AI Foundry
+- **IT Admin Agent Container App** - FastAPI application with GPT-4o tool-calling agent
+- **RBAC** - Managed identity roles for agent → OpenAI, agent → AI Foundry
+
+### Why This Configuration
+
+**AI Foundry Hub/Project pattern:** Azure AI Foundry provides a centralized management plane for AI applications. The Hub is the shared resource (like a workspace), and the Project is per-application. This mirrors how enterprise teams organize AI work.
+
+**Separate Container App:** The agent runs in its own Container App, isolated from the main RAG application. This gives independent scaling, deployments, and identity.
+
+**Tool-calling architecture:** The agent uses GPT-4o's function calling capability to invoke diagnostic tools:
+
+```
+User: "Why is the web app slow?"
+  → Agent calls get_system_metrics()
+  → Agent calls get_recent_logs()
+  → Agent calls check_dependencies()
+  → Agent synthesizes findings into diagnosis
+```
+
+Currently uses **mock data** for safety - no real infrastructure access. In production, you'd replace mock tools with real Azure Monitor queries, `az` CLI calls, etc.
+
+**Key Vault for Foundry:** AI Foundry requires a Key Vault for storing connection strings and secrets. This is created alongside the Hub.
+
+### The Agent's Tools
+
+| Tool | Purpose | What It Returns |
+|------|---------|----------------|
+| `get_system_config` | Host/OS/resource info | CPU cores, memory, OS version |
+| `get_system_metrics` | Real-time performance | CPU%, memory%, disk%, network |
+| `get_recent_logs` | Application logs | Recent log entries with severity |
+| `get_service_health` | Dependency status | Health of DB, cache, APIs |
+| `get_recent_changes` | Change history | Recent deployments and config changes |
+| `check_dependencies` | Package status | Installed packages and versions |
+| `get_resource_details` | Azure resource info | Resource type, SKU, status |
+
+### How It's Secured
+
+- **Managed identity** - Agent Container App authenticates to OpenAI via RBAC, not API keys
+- **No real infrastructure access** - Mock data prevents accidental changes
+- **Isolated compute** - Runs in separate Container App with its own identity
+- **RBAC scoped** - Agent identity only gets the roles it needs:
+  - `Cognitive Services OpenAI User` on the OpenAI resource
+  - `Azure AI Developer` on the AI Foundry project
+  - `AcrPull` on the container registry
+
+### Key Settings You Should Know
+
+| Parameter | Default | What It Does |
+|-----------|---------|--------------|
+| `useAgents` | `false` | Deploy agent infrastructure |
+| `minReplicas` | `1` | Agent always-on (no cold start) |
+| `maxReplicas` | `3` | Max scale-out |
+| `targetPort` | `8000` | FastAPI listen port |
+
+### Tradeoffs & Alternatives
+
+**Why not Azure AI Agent Service (hosted)?** Azure AI Agent Service can host agents for you. We use a self-hosted Container App because:
+- Full control over the runtime and dependencies
+- Custom tool implementations
+- Easier to debug and iterate
+- No additional service costs beyond the Container App
+
+**Why mock data instead of real tools?** Safety first. An agent with real `az` CLI access could accidentally modify infrastructure. Mock data demonstrates the pattern without risk. Swap in real tools when you have proper guardrails (read-only roles, approval workflows, audit logging).
+
+**Why AI Foundry instead of just OpenAI directly?** AI Foundry adds:
+- Centralized project management
+- Evaluation and testing capabilities
+- Connection management for multiple AI services
+- Future: agent orchestration, prompt flow integration
+
+For a single agent, direct OpenAI access works fine. AI Foundry pays off when you have multiple agents, evaluation pipelines, or team collaboration needs.
+
+### 🎓 Learn More
+
+- [Azure AI Foundry documentation](https://learn.microsoft.com/azure/ai-studio/)
+- [OpenAI function calling](https://platform.openai.com/docs/guides/function-calling)
+- [Container Apps with managed identity](https://learn.microsoft.com/azure/container-apps/managed-identity)
+
+---
+
 ## Putting It All Together
 
 ### The Request Flow (Detailed)
@@ -578,6 +669,20 @@ This isn't optional for security. You need logs for:
 13. **Front Door** returns response to user
 
 **Everything is logged.** You can trace this entire flow in Log Analytics.
+
+### Optional: The Agent Flow
+
+If you deployed with `useAgents=true`, there's a separate flow for the IT Admin Agent:
+
+1. **User** sends POST to agent endpoint: "Why is the web app slow?"
+2. **Agent Container App** receives request
+3. **Agent** calls GPT-4o with tool definitions
+4. **GPT-4o** decides which tools to call (e.g., `get_system_metrics`, `get_recent_logs`)
+5. **Agent** executes tool calls (mock data), returns results to GPT-4o
+6. **GPT-4o** synthesizes diagnosis from tool results
+7. **Agent** returns structured response with diagnosis + recommendations
+
+The agent runs independently from the RAG app - different Container App, different identity, different use case.
 
 ### What You Should Do Next
 

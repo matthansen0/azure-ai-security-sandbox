@@ -68,6 +68,15 @@ A self-contained Azure AI security demonstration platform featuring a RAG (Retri
 ┌───────────────────────────────────────────────────────────────────────┐
 │              Ingestion Pipeline (future: Container Apps Job)          │
 └───────────────────────────────────────────────────────────────────────┘
+
+┌─────────────────────────────────────────────────────────────────────┐
+│                   Optional: IT Admin Agent                          │
+│                   (--parameter useAgents=true)                      │
+├─────────────────────────────────────────────────────────────────────┤
+│  Container App (FastAPI) ─── Azure OpenAI (GPT-4o) ─── AI Foundry  │
+│  • Tool-calling agent       • Multi-step reasoning    • Hub + Proj  │
+│  • Mock diagnostic data     • Managed Identity        • Key Vault   │
+└─────────────────────────────────────────────────────────────────────┘
 ```
 
 ## 🔐 Security Features
@@ -82,6 +91,7 @@ A self-contained Azure AI security demonstration platform featuring a RAG (Retri
 | **Defender for Storage** | Data Protection | Optional (enabled via add-on script): malware scanning on upload, sensitive data discovery (PII/PCI/PHI) |
 | **Container Apps** | Serverless Containers | Auto-scaling, managed environment, no infrastructure to manage |
 | **Defender for Cosmos DB** | Database Security | Optional Defender for Cloud plan (enabled via add-on script) |
+| **AI Foundry + Agents** | Agent Security | Optional IT Admin Agent with managed identity auth, Key Vault for secrets, RBAC-controlled access (set `useAgents=true` to deploy) |
 | **Managed Identities** | Zero Secrets | No keys in code—all services authenticate via Azure AD |
 
 ### 🚪 API Management as AI Gateway
@@ -155,6 +165,12 @@ Or disable both for the fastest development cycle:
 
 ```bash
 azd up --parameter useAFD=false --parameter useAPIM=false
+```
+
+To deploy with the optional **IT Admin Agent** (adds AI Foundry Hub + Project, Key Vault, and agent Container App):
+
+```bash
+azd up --parameter useAgents=true
 ```
 
 When Front Door is disabled, `APP_PUBLIC_URL` points directly to the Container App FQDN.
@@ -288,6 +304,9 @@ azd up
 8. **Azure API Management** as AI Gateway for managed identity auth + retry logic (optional rate limiting/token tracking) (set `useAPIM=false` to skip)
 9. **Azure Front Door + WAF** for edge protection (WAF defaults to Detection mode, set `useAFD=false` to skip)
 10. **Microsoft Defender for Cloud** is not enabled in the core deployment; enable plans and per-resource Defender settings via the add-on script
+11. *(Optional)* **IT Admin Agent** - AI-powered troubleshooting agent with tool calling (set `useAgents=true`)
+12. *(Optional)* **Azure AI Foundry** Hub + Project for agent management (deployed with agents)
+13. *(Optional)* **Azure Key Vault** for AI Foundry secrets (deployed with agents)
 
 ### 💰 Cost Estimation
 
@@ -296,6 +315,7 @@ Estimated costs for running the sandbox (low/dev usage). Actual costs vary based
 | Configuration | Daily | Monthly |
 |--------------|-------|---------|
 | **Full deployment** (BasicV2 APIM + AFD) | ~$11-12 | ~$320-350 |
+| **Full + Agents** (adds AI Foundry + agent) | ~$12-14 | ~$370-420 |
 | **No APIM, No AFD** (fastest iteration) | ~$3-4 | ~$95-120 |
 
 **Cost breakdown by resource:**
@@ -311,6 +331,9 @@ Estimated costs for running the sandbox (low/dev usage). Actual costs vary based
 | Container Registry (Basic) | ~$5 | Image storage |
 | Storage Account | ~$1-2 | Blob storage for docs |
 | Log Analytics + App Insights | ~$5-10 | Pay per GB ingested |
+| AI Foundry Hub + Project | ~$0-5 | Optional (`useAgents=true`); management plane |
+| Key Vault | ~$1-2 | Optional (`useAgents=true`); secrets for Foundry |
+| Agent Container App | ~$5-10 | Optional (`useAgents=true`); consumption-based |
 
 > **💡 Cost-saving tips:**
 > - Use `--parameter useAFD=false` to skip Front Door during development (~$45/mo savings)
@@ -348,11 +371,23 @@ azure-ai-security-sandbox/
 │       ├── role-assignments.bicep # RBAC for managed identities
 │       ├── security.bicep     # DEPRECATED: Defender-for-Storage settings (moved to infra/addons/defender)
 │       ├── storage.bicep      # Storage account
-│       └── subscription-security.bicep # DEPRECATED: subscription Defender plans (moved to infra/addons/defender)
+│       ├── subscription-security.bicep # DEPRECATED: subscription Defender plans (moved to infra/addons/defender)
+│       └── agents/            # Optional AI Agent infrastructure (useAgents=true)
+│           ├── ai-foundry.bicep       # AI Foundry Hub + Project
+│           ├── agent-api.bicep        # Agent Container App
+│           ├── agent-role-assignments.bicep # Agent RBAC
+│           └── key-vault.bicep        # Key Vault for Foundry
 ├── infra/addons/               # Optional post-deploy add-ons
 │   └── defender/               # Defender for Cloud enablement + storage settings
 ├── scripts/                    # Post-deploy scripts (Defender enable/rollback)
 ├── docs/                       # Documentation
+├── agents/                     # AI Agents (optional)
+│   └── it-admin/              # IT Admin diagnostic agent
+│       ├── app.py             # FastAPI application + agent logic
+│       ├── tools/__init__.py  # Tool definitions + mock data
+│       ├── tests/             # Unit tests (run in preprovision hook)
+│       ├── Dockerfile         # Container build
+│       └── README.md          # Agent API reference
 ├── AGENTS.md                   # Instructions for AI coding agents
 ├── HOW_IT_WORKS.md             # Deep dive into what got deployed and why
 ├── azure.yaml                  # Azure Developer CLI configuration
@@ -368,6 +403,7 @@ azure-ai-security-sandbox/
 - [x] Defender for Cloud add-on (enable/rollback): Containers, APIs, Storage, Cosmos DB
 - [ ] Defender for AI add-on enablement (https://github.com/matthansen0/azure-ai-security-sandbox/issues/14)
 - [x] Azure OpenAI + AI Search integration
+- [x] IT Admin Agent with AI Foundry (optional: `useAgents=true`)
 - [ ] Ingestion pipeline (Container Apps Job)
 - [ ] Document upload and indexing pipeline
 - [ ] Chat with history
