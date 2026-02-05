@@ -30,6 +30,40 @@ services:
 
 # Hooks for custom deployment logic
 hooks:
+  # Pre-provision: Run tests before deploying
+  preprovision:
+    shell: sh
+    run: |
+      echo "Running pre-deployment tests..."
+      
+      # Run IT Admin Agent tests if they exist
+      if [ -d "./agents/it-admin/tests" ]; then
+        echo "Running IT Admin Agent tests..."
+        
+        # Create/use venv for tests
+        if [ ! -d "./.venv-tests" ]; then
+          python3 -m venv .venv-tests
+        fi
+        
+        # Install test dependencies
+        ./.venv-tests/bin/pip install -q pytest pytest-asyncio httpx
+        ./.venv-tests/bin/pip install -q -r ./agents/it-admin/requirements.txt
+        
+        # Run tests
+        cd ./agents/it-admin
+        ../../.venv-tests/bin/python -m pytest tests/ -v --tb=short
+        TEST_EXIT_CODE=$?
+        cd ../..
+        
+        if [ $TEST_EXIT_CODE -ne 0 ]; then
+          echo "❌ Tests failed! Aborting deployment."
+          exit 1
+        fi
+        echo "✅ All tests passed."
+      else
+        echo "No agent tests found, skipping..."
+      fi
+
   # Post-provision: Configure Front Door routes (only if AFD is enabled)
   postprovision:
     shell: sh
