@@ -23,6 +23,12 @@
     "useAFD": {
       "value": "${USE_AFD=true}"
     },
+    "useAPIM": {
+      "value": "${USE_APIM=true}"
+    },
+    "apimSku": {
+      "value": "${APIM_SKU=BasicV2}"
+    },
     "backendImageName": {
       "value": "${SERVICE_BACKEND_IMAGE_NAME=}"
     },
