@@ -34,6 +34,9 @@ param projectEndpoint string
 @description('Log Analytics Workspace ID for diagnostics')
 param logAnalyticsWorkspaceId string
 
+// Container image - uses parameter if provided, otherwise placeholder
+var containerImage = !empty(imageName) ? imageName : 'mcr.microsoft.com/azuredocs/containerapps-helloworld:latest'
+
 // User-assigned managed identity for ACR pull
 resource acrPullIdentity 'Microsoft.ManagedIdentity/userAssignedIdentities@2023-01-31' = {
   name: '${containerAppName}-acr-identity'
@@ -78,7 +81,7 @@ resource agentApp 'Microsoft.App/containerApps@2024-03-01' = {
       containers: [
         {
           name: 'agent-api'
-          image: !empty(imageName) ? imageName : 'mcr.microsoft.com/azuredocs/containerapps-helloworld:latest'
+          image: containerImage
           resources: {
             cpu: json('0.5')
             memory: '1Gi'
@@ -157,3 +160,4 @@ output identityPrincipalId string = agentApp.identity.principalId
 output acrPullIdentityPrincipalId string = acrPullIdentity.properties.principalId
 output acrPullIdentityId string = acrPullIdentity.id
 output agentApiUrl string = 'https://${agentApp.properties.configuration.ingress.fqdn}'
+output imageName string = containerImage
