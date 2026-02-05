@@ -43,6 +43,12 @@ param principalId string = ''
 @allowed(['User', 'ServicePrincipal'])
 param principalType string = 'User'
 
+@description('Deploy IT Admin Agent with AI Foundry (set to false to skip agent infrastructure)')
+param useAgents bool = false
+
+@description('Agent API container image name (set by azd deploy)')
+param agentImageName string = ''
+
 // Generate unique suffix for globally unique resource names
 var resourceToken = toLower(uniqueString(subscription().id, environmentName, location))
 var abbrs = loadJsonContent('abbreviations.json')
@@ -225,6 +231,75 @@ module frontDoor 'modules/front-door.bicep' = if (useAFD) {
   }
 }
 
+// ============ IT Admin Agent Infrastructure (optional) ============
+
+// Key Vault for AI Foundry (required by Foundry Hub)
+module agentKeyVault 'modules/agents/key-vault.bicep' = if (useAgents) {
+  name: 'agentKeyVault'
+  scope: rg
+  params: {
+    location: location
+    tags: tags
+    keyVaultName: '${abbrs.keyVaultVaultsAgent}${resourceToken}'
+    logAnalyticsWorkspaceId: monitoring.outputs.logAnalyticsWorkspaceId
+  }
+}
+
+// AI Foundry Hub and Project for Agent Service
+module aiFoundry 'modules/agents/ai-foundry.bicep' = if (useAgents) {
+  name: 'aiFoundry'
+  scope: rg
+  params: {
+    location: location
+    tags: tags
+    hubName: '${abbrs.machineLearningHub}${resourceToken}'
+    projectName: '${abbrs.machineLearningProject}${resourceToken}'
+    logAnalyticsWorkspaceId: monitoring.outputs.logAnalyticsWorkspaceId
+    storageAccountId: storage.outputs.storageAccountId
+    keyVaultId: useAgents ? agentKeyVault.outputs.keyVaultId : ''
+    applicationInsightsId: monitoring.outputs.applicationInsightsId
+    openAiAccountName: aiServices.outputs.openAiAccountName
+    openAiEndpoint: aiServices.outputs.openAiEndpoint
+    searchServiceName: aiServices.outputs.searchServiceName
+    searchEndpoint: aiServices.outputs.searchEndpoint
+  }
+}
+
+// Agent API Container App
+module agentApi 'modules/agents/agent-api.bicep' = if (useAgents) {
+  name: 'agentApi'
+  scope: rg
+  params: {
+    location: location
+    tags: tags
+    containerAppName: '${abbrs.appContainerApps}agent-${resourceToken}'
+    containerAppsEnvId: containerApps.outputs.containerAppsEnvironmentId
+    containerRegistryLoginServer: containerRegistry.outputs.loginServer
+    imageName: agentImageName
+    applicationInsightsConnectionString: monitoring.outputs.applicationInsightsConnectionString
+    openAiEndpoint: aiServices.outputs.openAiEndpoint
+    openAiDeploymentName: aiServices.outputs.chatDeploymentName
+    projectEndpoint: useAgents ? aiFoundry.outputs.projectEndpoint : ''
+    logAnalyticsWorkspaceId: monitoring.outputs.logAnalyticsWorkspaceId
+  }
+}
+
+// Role assignments for Agent infrastructure
+module agentRoleAssignments 'modules/agents/agent-role-assignments.bicep' = if (useAgents) {
+  name: 'agentRoleAssignments'
+  scope: rg
+  params: {
+    hubPrincipalId: useAgents ? aiFoundry.outputs.hubPrincipalId : ''
+    projectPrincipalId: useAgents ? aiFoundry.outputs.projectPrincipalId : ''
+    agentApiPrincipalId: useAgents ? agentApi.outputs.identityPrincipalId : ''
+    acrPullIdentityPrincipalId: useAgents ? agentApi.outputs.acrPullIdentityPrincipalId : ''
+    openAiAccountName: aiServices.outputs.openAiAccountName
+    searchServiceName: aiServices.outputs.searchServiceName
+    storageAccountName: storage.outputs.storageAccountName
+    containerRegistryName: containerRegistry.outputs.name
+  }
+}
+
 // Defender for Cloud enablement is intentionally NOT performed in the core deployment.
 // Use the post-deploy add-on script: ./scripts/enable-defender.sh --confirm
 
@@ -276,3 +351,12 @@ output AZURE_OPENAI_VIA_APIM string = useAPIM ? '${apiManagement.outputs.apimGat
 // AI Gateway routing status - indicates if Container App routes through APIM
 output AI_GATEWAY_ENABLED bool = useAPIM
 output CONTAINER_APP_OPENAI_ENDPOINT string = containerApps.outputs.configuredOpenAiEndpoint
+
+// Agent outputs (only when agents are enabled)
+output AGENT_ENABLED bool = useAgents
+output AGENT_API_URL string = useAgents ? agentApi.outputs.agentApiUrl : ''
+output AGENT_API_NAME string = useAgents ? agentApi.outputs.containerAppName : ''
+output AI_FOUNDRY_HUB_NAME string = useAgents ? aiFoundry.outputs.hubName : ''
+output AI_FOUNDRY_PROJECT_NAME string = useAgents ? aiFoundry.outputs.projectName : ''
+output AI_FOUNDRY_PROJECT_ENDPOINT string = useAgents ? aiFoundry.outputs.projectEndpoint : ''
+output SERVICE_AGENT_IMAGE_NAME string = useAgents ? agentImageName : ''

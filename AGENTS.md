@@ -49,6 +49,19 @@ User → Azure Front Door (WAF) → Azure API Management (AI Gateway) → Contai
   - `security.bicep` - DEPRECATED (Defender settings moved to add-on)
   - `subscription-security.bicep` - DEPRECATED (subscription-wide Defender plans moved to add-on)
   - `storage.bicep` - Blob storage for documents
+- `modules/agents/` - **AI Agent infrastructure (optional)**:
+  - `ai-foundry.bicep` - AI Foundry Hub + Project for Agent Service
+  - `agent-api.bicep` - Container App for agent API
+  - `agent-role-assignments.bicep` - RBAC for agent managed identities
+  - `key-vault.bicep` - Key Vault for AI Foundry
+
+### IT Admin Agent (`/agents/it-admin`)
+- `app.py` - FastAPI application with agent logic
+- `tools/__init__.py` - Tool definitions and mock implementations
+- `Dockerfile` - Container build for agent API
+- `README.md` - Agent documentation and API reference
+- **Deploy with:** `azd up --parameter useAgents=true`
+
 
 ### Optional Defender Add-on
 
@@ -87,15 +100,20 @@ State tracking is written locally under `.defender/` (ignored by git).
 | `infra/main.bicep` | All configurable parameters live here |
 | `infra/modules/api-management.bicep` | AI Gateway policies - auth + retry (optional rate limits/token logging) |
 | `infra/modules/front-door.bicep` | WAF rules and mode configuration |
+| `infra/modules/agents/ai-foundry.bicep` | AI Foundry Hub + Project for agents |
+| `agents/it-admin/app.py` | IT Admin Agent FastAPI application |
+| `agents/it-admin/tools/__init__.py` | Agent tools + mock data |
 
 
 ## Common Operations
 
 ### Deploy the Solution
 ```bash
-azd up                           # Full deployment
+azd up                           # Full deployment (no agents)
 azd up --parameter useAPIM=false  # Skip APIM for faster iteration
+azd up --parameter useAgents=true # Deploy with IT Admin Agent
 ```
+
 
 ### Populate Search Index
 The `postprovision` hook in `azure.yaml` automatically runs prepdocs after provisioning.
@@ -182,6 +200,8 @@ Set via `azd env set <KEY> <VALUE>`:
 | `USE_APIM` | `true` | Enable AI Gateway |
 | `APIM_SKU` | `BasicV2` | APIM SKU (BasicV2, StandardV2) |
 | `WAF_MODE` | `Detection` | WAF mode (Detection, Prevention) |
+| `USE_AGENTS` | `false` | Deploy IT Admin Agent + AI Foundry infrastructure |
+
 
 ## RBAC Architecture
 

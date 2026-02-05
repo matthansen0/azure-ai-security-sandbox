@@ -19,6 +19,14 @@ services:
     host: containerapp
     docker:
       remoteBuild: true
+  
+  # IT Admin Agent API (only deployed when useAgents=true)
+  agent:
+    project: ./agents/it-admin
+    language: py
+    host: containerapp
+    docker:
+      remoteBuild: true
 
 # Hooks for custom deployment logic
 hooks:
