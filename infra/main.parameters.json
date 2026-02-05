@@ -25,6 +25,12 @@
     },
     "backendImageName": {
       "value": "${SERVICE_BACKEND_IMAGE_NAME=}"
+    },
+    "useAgents": {
+      "value": "${USE_AGENTS=false}"
+    },
+    "agentImageName": {
+      "value": "${SERVICE_AGENT_IMAGE_NAME=}"
     }
   }
 }

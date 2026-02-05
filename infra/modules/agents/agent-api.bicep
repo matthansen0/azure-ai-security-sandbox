@@ -34,8 +34,19 @@ param projectEndpoint string
 @description('Log Analytics Workspace ID for diagnostics')
 param logAnalyticsWorkspaceId string
 
+@description('Container Registry name for ACR pull role assignment')
+param containerRegistryName string
+
 // Container image - uses parameter if provided, otherwise placeholder
 var containerImage = !empty(imageName) ? imageName : 'mcr.microsoft.com/azuredocs/containerapps-helloworld:latest'
+
+// AcrPull role definition ID
+var acrPullRoleId = '7f951dda-4ed3-4680-a7ca-43fe172d538d'
+
+// Reference to existing Container Registry
+resource containerRegistry 'Microsoft.ContainerRegistry/registries@2023-11-01-preview' existing = {
+  name: containerRegistryName
+}
 
 // User-assigned managed identity for ACR pull
 resource acrPullIdentity 'Microsoft.ManagedIdentity/userAssignedIdentities@2023-01-31' = {
@@ -44,11 +55,23 @@ resource acrPullIdentity 'Microsoft.ManagedIdentity/userAssignedIdentities@2023-
   tags: tags
 }
 
+// Grant AcrPull role to the identity BEFORE creating Container App
+resource acrPullRoleAssignment 'Microsoft.Authorization/roleAssignments@2022-04-01' = {
+  name: guid(containerRegistry.id, acrPullIdentity.id, acrPullRoleId)
+  scope: containerRegistry
+  properties: {
+    principalId: acrPullIdentity.properties.principalId
+    roleDefinitionId: subscriptionResourceId('Microsoft.Authorization/roleDefinitions', acrPullRoleId)
+    principalType: 'ServicePrincipal'
+  }
+}
+
 // Container App for Agent API
 resource agentApp 'Microsoft.App/containerApps@2024-03-01' = {
   name: containerAppName
   location: location
-  tags: union(tags, { 'azd-service-name': 'agent-api' })
+  tags: union(tags, { 'azd-service-name': 'agent' })
+  dependsOn: [acrPullRoleAssignment]  // Wait for ACR pull permissions
   identity: {
     type: 'SystemAssigned,UserAssigned'
     userAssignedIdentities: {
@@ -111,7 +134,7 @@ resource agentApp 'Microsoft.App/containerApps@2024-03-01' = {
         }
       ]
       scale: {
-        minReplicas: 0
+        minReplicas: 1
         maxReplicas: 3
         rules: [
           {
@@ -128,22 +151,12 @@ resource agentApp 'Microsoft.App/containerApps@2024-03-01' = {
   }
 }
 
-// Diagnostic settings
+// Diagnostic settings - only metrics since log categories aren't supported for Container Apps
 resource agentAppDiagnostics 'Microsoft.Insights/diagnosticSettings@2021-05-01-preview' = {
   name: 'agent-api-diagnostics'
   scope: agentApp
   properties: {
     workspaceId: logAnalyticsWorkspaceId
-    logs: [
-      {
-        category: 'ContainerAppConsoleLogs'
-        enabled: true
-      }
-      {
-        category: 'ContainerAppSystemLogs'
-        enabled: true
-      }
-    ]
     metrics: [
       {
         category: 'AllMetrics'

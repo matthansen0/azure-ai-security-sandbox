@@ -275,6 +275,7 @@ module agentApi 'modules/agents/agent-api.bicep' = if (useAgents) {
     containerAppName: '${abbrs.appContainerApps}agent-${resourceToken}'
     containerAppsEnvId: containerApps.outputs.containerAppsEnvironmentId
     containerRegistryLoginServer: containerRegistry.outputs.loginServer
+    containerRegistryName: containerRegistry.outputs.name
     imageName: agentImageName
     applicationInsightsConnectionString: monitoring.outputs.applicationInsightsConnectionString
     openAiEndpoint: aiServices.outputs.openAiEndpoint
@@ -292,11 +293,9 @@ module agentRoleAssignments 'modules/agents/agent-role-assignments.bicep' = if (
     hubPrincipalId: useAgents ? aiFoundry.outputs.hubPrincipalId : ''
     projectPrincipalId: useAgents ? aiFoundry.outputs.projectPrincipalId : ''
     agentApiPrincipalId: useAgents ? agentApi.outputs.identityPrincipalId : ''
-    acrPullIdentityPrincipalId: useAgents ? agentApi.outputs.acrPullIdentityPrincipalId : ''
     openAiAccountName: aiServices.outputs.openAiAccountName
     searchServiceName: aiServices.outputs.searchServiceName
     storageAccountName: storage.outputs.storageAccountName
-    containerRegistryName: containerRegistry.outputs.name
   }
 }
 
