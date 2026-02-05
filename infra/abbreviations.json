@@ -106,5 +106,8 @@
   "webServerFarms": "plan-",
   "webSitesAppService": "app-",
   "webSitesFunctions": "func-",
-  "webStaticSites": "stapp-"
+  "webStaticSites": "stapp-",
+  "machineLearningHub": "aihub-",
+  "machineLearningProject": "aiproj-",
+  "keyVaultVaultsAgent": "kvagent-"
 }
