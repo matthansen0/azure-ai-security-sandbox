@@ -25,59 +25,7 @@ A self-contained Azure AI security demonstration platform featuring a RAG (Retri
 
 ## 🏗️ Architecture
 
-```
-┌─────────────────────────────────────────────────────────────────────┐
-│                         Users / Browser                              │
-└─────────────────────────────────┬───────────────────────────────────┘
-                                  │
-                                  ▼
-┌─────────────────────────────────────────────────────────────────────┐
-│                   Azure Front Door + WAF (Premium)                   │
-│                   • OWASP 3.2 Managed Rules                         │
-│                   • Bot Protection                                   │
-│                   • WAF Logging (Detection by default)               │
-└─────────────────────────────────┬───────────────────────────────────┘
-                                  │
-                                  ▼
-┌─────────────────────────────────────────────────────────────────────┐
-│                    Azure Container Apps                              │
-│                    • RAG Chat Application (image built via ACR)     │
-│                    • Managed Identity                                │
-│                    • Auto-scaling                                    │
-└───────────┬─────────────────────┼─────────────────────┬─────────────┘
-            │                     │                     │
-            ▼                     ▼                     ▼
-┌───────────────────┐  ┌───────────────────┐  ┌───────────────────────┐
-│  Azure API Mgmt   │  │  Azure AI Search  │  │    Azure Storage      │
-│  (AI Gateway)     │  │  • Vector Search  │  │    • Documents        │
-│  • Auth + Retry   │  │  • Semantic       │  │    • Malware Scan     │
-│  • (Optional:     │  │    Ranking        │  │                       │
-│     rate/tokens)  │  │                  │  │                       │
-│  • Managed ID     │  └───────────────────┘  └───────────────────────┘
-└─────────┬─────────┘                                   │
-          │                                             ▼
-          ▼                                   ┌───────────────────────┐
-┌───────────────────┐                         │    Azure Cosmos DB    │
-│   Azure OpenAI    │                         │    • Chat History     │
-│   • GPT-4o        │                         │    • Defender         │
-│   • Embeddings    │                         └───────────────────────┘
-│   • Defender AI   │
-└───────────────────┘
-            │
-            ▼
-┌───────────────────────────────────────────────────────────────────────┐
-│              Ingestion Pipeline (future: Container Apps Job)          │
-└───────────────────────────────────────────────────────────────────────┘
-
-┌─────────────────────────────────────────────────────────────────────┐
-│                   Optional: IT Admin Agent                          │
-│                   (--parameter useAgents=true)                      │
-├─────────────────────────────────────────────────────────────────────┤
-│  Container App (FastAPI) ─── Azure OpenAI (GPT-4o) ─── AI Foundry  │
-│  • Tool-calling agent       • Multi-step reasoning    • Hub + Proj  │
-│  • Mock diagnostic data     • Managed Identity        • Key Vault   │
-└─────────────────────────────────────────────────────────────────────┘
-```
+![Azure AI Security Sandbox Architecture](docs/architecture/architecture.png)
 
 ## 🔐 Security Features
 
