@@ -91,6 +91,7 @@ State tracking is written locally under `.defender/` (ignored by git).
 
 ### Documentation (`/docs`)
 - `issues/` - Tracked issues and enhancement documentation
+- `labs/` - Hands-on lab guides for exploring each security layer
 
 ## Key Files to Understand
 

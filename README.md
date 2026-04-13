@@ -18,6 +18,8 @@
 - [License](#-license)
 
 > **📖 Want to understand what you deployed?** Read [HOW_IT_WORKS.md](HOW_IT_WORKS.md) for a detailed walkthrough of every component, why we chose these configurations, and what you should know before going to production.
+>
+> **🧪 Ready to explore hands-on?** Check out the [Lab Guides](docs/labs/README.md) for step-by-step exercises verifying each security layer — WAF, AI Gateway, RBAC, monitoring, Defender, and agent security.
 
 ## ✨ Overview
 
