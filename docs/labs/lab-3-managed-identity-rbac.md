@@ -8,16 +8,6 @@
 
 ---
 
-## Setup
-
-```bash
-# Load environment variables
-eval "$(azd env get-values | sed 's/^/export /')"
-RG="rg-${AZURE_ENV_NAME}"
-```
-
----
-
 ## Exercise 1: Identify All Managed Identities
 
 Every service-to-service connection uses managed identity instead of connection strings or API keys.

@@ -4,37 +4,23 @@
 
 **Time:** ~20 minutes
 
-**Requires:** Full deployment with `useAFD=true` (default)
-
----
-
-## Setup
-
-```bash
-# Load environment variables
-eval "$(azd env get-values | sed 's/^/export /')"
-
-# Get the Front Door endpoint
-AFD_ENDPOINT=$(azd env get-value APP_PUBLIC_URL)
-echo "Front Door URL: $AFD_ENDPOINT"
-
-# Get the Container App FQDN (direct, bypasses AFD)
-CONTAINER_APP_FQDN=$(az containerapp show \
-  -n "ca-${AZURE_ENV_NAME}" \
-  -g "rg-${AZURE_ENV_NAME}" \
-  --query "properties.configuration.ingress.fqdn" -o tsv 2>/dev/null || \
-  az containerapp list -g "rg-${AZURE_ENV_NAME}" --query "[0].properties.configuration.ingress.fqdn" -o tsv)
-echo "Container App URL: https://$CONTAINER_APP_FQDN"
-```
+**Requires:** `useAFD=true` (default)
 
 ---
 
 ## Exercise 1: Verify Front Door Is Routing Traffic
 
-Send a request through Front Door and confirm it reaches your application.
+Open the chat web app in your browser using the Front Door URL (the `APP_PUBLIC_URL` from the [prerequisites](README.md#prerequisites)). You should see the chat interface load normally.
+
+Now verify Front Door is in the path by checking the response headers:
 
 ```bash
-# Request through Front Door
+# Get the Front Door endpoint and Container App FQDN
+AFD_ENDPOINT=$(azd env get-value APP_PUBLIC_URL)
+CONTAINER_APP_FQDN=$(az containerapp list -g "$RG" \
+  --query "[0].properties.configuration.ingress.fqdn" -o tsv)
+
+# Check for the x-azure-ref header (proves Front Door is routing)
 curl -sS -o /dev/null -w "Status: %{http_code}\nHeaders:\n" -D - \
   "${AFD_ENDPOINT}" 2>&1 | head -20
 ```
@@ -44,12 +30,10 @@ curl -sS -o /dev/null -w "Status: %{http_code}\nHeaders:\n" -D - \
 - `x-azure-ref` header — this confirms the request went through Azure Front Door
 - `x-fd-healthprobe` should NOT be present (that's only for health probes)
 
-Now compare with a direct request to the Container App:
+Now try loading the Container App URL directly in your browser (`https://<CONTAINER_APP_FQDN>`). You should see the same chat interface:
 
 ```bash
-# Direct to Container App (bypasses Front Door)
-curl -sS -o /dev/null -w "Status: %{http_code}\n" \
-  "https://$CONTAINER_APP_FQDN"
+echo "https://$CONTAINER_APP_FQDN"
 ```
 
 **Key takeaway:** Both URLs serve the same app. Front Door adds caching, WAF, and global edge presence.
@@ -63,21 +47,21 @@ Check what WAF rules are active and what mode they're in.
 ```bash
 # Find the WAF policy name
 WAF_NAME=$(az network front-door waf-policy list \
-  -g "rg-${AZURE_ENV_NAME}" \
+  -g "$RG" \
   --query "[0].name" -o tsv 2>/dev/null || \
-  az resource list -g "rg-${AZURE_ENV_NAME}" \
+  az resource list -g "$RG" \
     --resource-type "Microsoft.Network/FrontDoorWebApplicationFirewallPolicies" \
     --query "[0].name" -o tsv)
 echo "WAF Policy: $WAF_NAME"
 
 # Check WAF mode and managed rule sets
 az network front-door waf-policy show \
-  -g "rg-${AZURE_ENV_NAME}" \
+  -g "$RG" \
   -n "$WAF_NAME" \
   --query "{mode: policySettings.mode, enabled: policySettings.enabledState, ruleSets: managedRules.managedRuleSets[].{type: ruleSetType, version: ruleSetVersion}}" \
   -o json 2>/dev/null || \
   az rest --method get \
-    --uri "https://management.azure.com/subscriptions/${AZURE_SUBSCRIPTION_ID}/resourceGroups/rg-${AZURE_ENV_NAME}/providers/Microsoft.Network/FrontDoorWebApplicationFirewallPolicies/${WAF_NAME}?api-version=2024-02-01" \
+    --uri "https://management.azure.com/subscriptions/${AZURE_SUBSCRIPTION_ID}/resourceGroups/${RG}/providers/Microsoft.Network/FrontDoorWebApplicationFirewallPolicies/${WAF_NAME}?api-version=2024-02-01" \
     --query "{mode: properties.policySettings.mode, enabled: properties.policySettings.enabledState, ruleSets: properties.managedRules.managedRuleSets[].{type: ruleSetType, version: ruleSetVersion}}" -o json
 ```
 
@@ -90,7 +74,7 @@ az network front-door waf-policy show \
 
 ## Exercise 3: Trigger WAF Rules (Detection Mode)
 
-Send requests that would normally be caught by WAF rules. In Detection mode, they'll be **logged but not blocked**.
+Now try crafting requests that WAF rules are designed to catch. We use `curl` here since these are deliberately malicious URL patterns you wouldn't type into the chat UI. In Detection mode, WAF **logs but does not block** them.
 
 ### 3a. SQL Injection Attempt
 
@@ -126,8 +110,8 @@ After a few minutes (log ingestion delay), query Log Analytics to see the WAF de
 ```bash
 # Get the Log Analytics workspace ID
 WORKSPACE_ID=$(az monitor log-analytics workspace show \
-  -g "rg-${AZURE_ENV_NAME}" \
-  -n "$(az monitor log-analytics workspace list -g "rg-${AZURE_ENV_NAME}" --query "[0].name" -o tsv)" \
+  -g "$RG" \
+  -n "$(az monitor log-analytics workspace list -g "$RG" --query "[0].name" -o tsv)" \
   --query customerId -o tsv)
 
 TOKEN=$(az account get-access-token --resource https://api.loganalytics.io --query accessToken -o tsv)
@@ -183,7 +167,7 @@ If you want to test Prevention mode (requests will be blocked):
 ```bash
 # Switch WAF to Prevention mode
 az rest --method patch \
-  --uri "https://management.azure.com/subscriptions/${AZURE_SUBSCRIPTION_ID}/resourceGroups/rg-${AZURE_ENV_NAME}/providers/Microsoft.Network/FrontDoorWebApplicationFirewallPolicies/${WAF_NAME}?api-version=2024-02-01" \
+  --uri "https://management.azure.com/subscriptions/${AZURE_SUBSCRIPTION_ID}/resourceGroups/${RG}/providers/Microsoft.Network/FrontDoorWebApplicationFirewallPolicies/${WAF_NAME}?api-version=2024-02-01" \
   --body '{"properties": {"policySettings": {"mode": "Prevention"}}}'
 
 # Wait a few minutes for propagation, then retry the SQL injection test
@@ -195,7 +179,7 @@ curl -sS -o /dev/null -w "Status: %{http_code}\n" \
 > **Remember to switch back to Detection mode when done:**
 > ```bash
 > az rest --method patch \
->   --uri "https://management.azure.com/subscriptions/${AZURE_SUBSCRIPTION_ID}/resourceGroups/rg-${AZURE_ENV_NAME}/providers/Microsoft.Network/FrontDoorWebApplicationFirewallPolicies/${WAF_NAME}?api-version=2024-02-01" \
+>   --uri "https://management.azure.com/subscriptions/${AZURE_SUBSCRIPTION_ID}/resourceGroups/${RG}/providers/Microsoft.Network/FrontDoorWebApplicationFirewallPolicies/${WAF_NAME}?api-version=2024-02-01" \
 >   --body '{"properties": {"policySettings": {"mode": "Detection"}}}'
 > ```
 

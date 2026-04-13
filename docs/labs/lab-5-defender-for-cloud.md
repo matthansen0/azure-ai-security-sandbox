@@ -10,16 +10,6 @@
 
 ---
 
-## Setup
-
-```bash
-# Load environment variables
-eval "$(azd env get-values | sed 's/^/export /')"
-RG="rg-${AZURE_ENV_NAME}"
-```
-
----
-
 ## Exercise 1: Check Current Defender Status
 
 Before enabling anything, see what Defender plans are currently active.
@@ -93,7 +83,7 @@ After enabling Defender, Azure generates security recommendations for your resou
 ```bash
 # List security recommendations for the resource group
 az security assessment list \
-  --query "[?contains(resourceDetails.id, 'rg-${AZURE_ENV_NAME}')].{name: displayName, status: status.code, severity: metadata.severity}" \
+  --query "[?contains(resourceDetails.id, '${RG}')].{name: displayName, status: status.code, severity: metadata.severity}" \
   -o table 2>/dev/null || echo "Recommendations may take 15-30 minutes to appear after enabling Defender."
 ```
 

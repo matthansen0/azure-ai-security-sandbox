@@ -4,36 +4,25 @@
 
 **Time:** ~25 minutes
 
-**Requires:** Deployment with `useAPIM=true` (default)
-
----
-
-## Setup
-
-```bash
-# Load environment variables
-eval "$(azd env get-values | sed 's/^/export /')"
-
-# Get APIM service name
-APIM_NAME=$(az apim list -g "rg-${AZURE_ENV_NAME}" --query "[0].name" -o tsv)
-echo "APIM Service: $APIM_NAME"
-
-# Get APIM gateway URL
-APIM_URL="https://${APIM_NAME}.azure-api.net"
-echo "APIM Gateway: $APIM_URL"
-
-# Get APIM subscription key for testing
-APIM_KEY=$(az apim subscription keys list \
-  -g "rg-${AZURE_ENV_NAME}" \
-  --service-name "$APIM_NAME" \
-  --subscription-id internal-apps \
-  --query primaryKey -o tsv)
-echo "Subscription key retrieved: $([ -n "$APIM_KEY" ] && echo 'yes' || echo 'no')"
-```
+**Requires:** `useAPIM=true` (default)
 
 ---
 
 ## Exercise 1: Verify APIM Is Proxying to Azure OpenAI
+
+In this lab, we test APIM **directly** using `curl` — bypassing the chat web app — to isolate and verify the AI Gateway layer. First, get the APIM details:
+
+```bash
+# Get APIM service name and subscription key
+APIM_NAME=$(az apim list -g "$RG" --query "[0].name" -o tsv)
+APIM_URL="https://${APIM_NAME}.azure-api.net"
+APIM_KEY=$(az apim subscription keys list \
+  -g "$RG" \
+  --service-name "$APIM_NAME" \
+  --subscription-id internal-apps \
+  --query primaryKey -o tsv)
+echo "APIM Gateway: $APIM_URL"
+```
 
 Send a request directly to APIM to confirm it can reach Azure OpenAI using managed identity.
 
@@ -83,19 +72,19 @@ Verify that APIM authenticates to Azure OpenAI with managed identity, not an API
 
 ```bash
 # Check APIM identity
-az apim show -g "rg-${AZURE_ENV_NAME}" -n "$APIM_NAME" \
+az apim show -g "$RG" -n "$APIM_NAME" \
   --query "{identity_type: identity.type, principal_id: identity.principalId}" -o json
 
 # Check role assignment: APIM → Azure OpenAI
-APIM_PRINCIPAL=$(az apim show -g "rg-${AZURE_ENV_NAME}" -n "$APIM_NAME" \
+APIM_PRINCIPAL=$(az apim show -g "$RG" -n "$APIM_NAME" \
   --query "identity.principalId" -o tsv)
 
-OPENAI_NAME=$(az cognitiveservices account list -g "rg-${AZURE_ENV_NAME}" \
+OPENAI_NAME=$(az cognitiveservices account list -g "$RG" \
   --query "[0].name" -o tsv)
 
 az role assignment list \
   --assignee "$APIM_PRINCIPAL" \
-  --scope "/subscriptions/${AZURE_SUBSCRIPTION_ID}/resourceGroups/rg-${AZURE_ENV_NAME}/providers/Microsoft.CognitiveServices/accounts/${OPENAI_NAME}" \
+  --scope "/subscriptions/${AZURE_SUBSCRIPTION_ID}/resourceGroups/${RG}/providers/Microsoft.CognitiveServices/accounts/${OPENAI_NAME}" \
   --query "[].{role: roleDefinitionName, scope: scope}" -o table
 ```
 
@@ -112,13 +101,13 @@ Look at the policies that control how APIM handles requests.
 
 ```bash
 # List APIs configured in APIM
-az apim api list -g "rg-${AZURE_ENV_NAME}" \
+az apim api list -g "$RG" \
   --service-name "$APIM_NAME" \
   --query "[].{name: name, path: path, displayName: displayName}" -o table
 
 # Get the all-operations policy (base/global for the OpenAI API)
 az rest --method get \
-  --uri "https://management.azure.com/subscriptions/${AZURE_SUBSCRIPTION_ID}/resourceGroups/rg-${AZURE_ENV_NAME}/providers/Microsoft.ApiManagement/service/${APIM_NAME}/apis/openai/policies/policy?api-version=2023-09-01-preview&format=rawxml" \
+  --uri "https://management.azure.com/subscriptions/${AZURE_SUBSCRIPTION_ID}/resourceGroups/${RG}/providers/Microsoft.ApiManagement/service/${APIM_NAME}/apis/openai/policies/policy?api-version=2023-09-01-preview&format=rawxml" \
   --query "properties.value" -o tsv 2>/dev/null || echo "(Use Azure Portal to view policies if CLI fails)"
 ```
 
@@ -132,7 +121,7 @@ az rest --method get \
 
 ## Exercise 5: Test Retry Behavior
 
-APIM retries requests when Azure OpenAI returns 429 (rate limit). While hard to trigger on demand, you can verify the policy is configured.
+APIM retries requests when Azure OpenAI returns 429 (rate limit). You can generate traffic by **asking several questions rapidly in the chat web app**, then check the APIM logs for rate-limit headers. You can also test directly against APIM:
 
 ```bash
 # Send several rapid requests to see rate limit headers
@@ -160,7 +149,7 @@ done
 Check what APIM logged for your test requests.
 
 ```bash
-WORKSPACE_ID=$(az monitor log-analytics workspace list -g "rg-${AZURE_ENV_NAME}" \
+WORKSPACE_ID=$(az monitor log-analytics workspace list -g "$RG" \
   --query "[0].customerId" -o tsv)
 TOKEN=$(az account get-access-token --resource https://api.loganalytics.io --query accessToken -o tsv)
 

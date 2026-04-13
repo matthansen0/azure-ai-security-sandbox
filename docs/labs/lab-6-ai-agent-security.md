@@ -4,34 +4,21 @@
 
 **Time:** ~20 minutes
 
-**Requires:** Deployment with `useAgents=true`:
-```bash
-azd up --parameter useAgents=true
-```
-
----
-
-## Setup
-
-```bash
-# Load environment variables
-eval "$(azd env get-values | sed 's/^/export /')"
-RG="rg-${AZURE_ENV_NAME}"
-
-# Get the agent Container App URL
-AGENT_FQDN=$(az containerapp list -g "$RG" \
-  --query "[?contains(name, 'agent')].properties.configuration.ingress.fqdn | [0]" -o tsv)
-AGENT_URL="https://$AGENT_FQDN"
-echo "Agent URL: $AGENT_URL"
-```
+**Requires:** The optional agent infrastructure (`useAgents=true` — see [prerequisites](README.md#prerequisites))
 
 ---
 
 ## Exercise 1: Verify Agent Health and Configuration
 
-Check that the agent is running and properly configured with managed identity.
+First, find the agent's URL, then check that it's running and properly configured with managed identity.
 
 ```bash
+# Get the agent Container App URL
+AGENT_FQDN=$(az containerapp list -g "$RG" \
+  --query "[?contains(name, 'agent')].properties.configuration.ingress.fqdn | [0]" -o tsv)
+AGENT_URL="https://$AGENT_FQDN"
+echo "Agent URL: $AGENT_URL"
+
 # Health check
 curl -sS "${AGENT_URL}/health" | jq .
 ```

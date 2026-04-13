@@ -1,31 +1,29 @@
 # 🧪 Lab Guides
 
-Hands-on exercises for exploring and verifying the security controls in the Azure AI Security Sandbox. Each lab focuses on a specific security layer and walks you through real verification steps using the Azure CLI, curl, and Log Analytics queries.
+Hands-on exercises for exploring and verifying the security controls in the Azure AI Security Sandbox. Each lab focuses on a specific security layer and walks you through real verification steps using the Azure CLI, the chat web app, and Log Analytics queries.
 
 ## Prerequisites
 
-Before starting the labs:
+These labs assume the sandbox is **already deployed** with `azd up`. If you haven't deployed yet, see the [Quick Start](../../README.md#-quick-start) in the main README.
 
-1. **Deploy the sandbox** with all features enabled:
-   ```bash
-   azd up
-   ```
-   For labs involving the IT Admin Agent (Lab 6), deploy with:
-   ```bash
-   azd up --parameter useAgents=true
-   ```
+> **Lab 6 (AI Agent Security)** requires the optional agent infrastructure. If you need it, redeploy with `azd up --parameter useAgents=true`.
 
-2. **Set up environment variables** for convenience:
-   ```bash
-   # Load all azd env values
-   eval "$(azd env get-values | sed 's/^/export /')"
+Before starting any lab, load your environment variables:
 
-   # Get the resource token (shared suffix across all resources)
-   RESOURCE_TOKEN=$(az resource list -g "rg-${AZURE_ENV_NAME}" --query "[0].name" -o tsv | grep -oE '[a-z0-9]+$')
-   echo "Resource token: $RESOURCE_TOKEN"
-   ```
+```bash
+# Load all azd env values into your shell
+eval "$(azd env get-values | sed 's/^/export /')"
+RG="rg-${AZURE_ENV_NAME}"
+```
 
-3. **Tools required:** Azure CLI (`az`), `curl`, `jq` (all pre-installed in the dev container)
+Then open the chat web app in your browser — you'll use it throughout the labs to generate traffic:
+
+```bash
+# Get the application URL and open it
+echo "$(azd env get-value APP_PUBLIC_URL)"
+```
+
+**Tools required:** Azure CLI (`az`), `curl`, `jq` (all pre-installed in the dev container)
 
 ## Lab Overview
 

@@ -8,13 +8,23 @@
 
 ---
 
-## Setup
+## Exercise 1: Generate Traceable Traffic
+
+Open the chat web app in your browser (the `APP_PUBLIC_URL` from the [prerequisites](README.md#prerequisites)) and ask a question that will exercise the full RAG pipeline. For example:
+
+> **What is Northwind Health Plus?**
+
+Ask 2-3 questions to generate enough traffic for the log queries below.
+
+> **Note:** Wait 2-5 minutes for logs to appear in Log Analytics before proceeding.
+
+---
+
+## Exercise 2: Verify All Resources Send Diagnostic Logs
+
+Set up the Log Analytics query helper, then check which resources are sending logs.
 
 ```bash
-# Load environment variables
-eval "$(azd env get-values | sed 's/^/export /')"
-RG="rg-${AZURE_ENV_NAME}"
-
 # Get Log Analytics workspace details
 WORKSPACE_NAME=$(az monitor log-analytics workspace list -g "$RG" --query "[0].name" -o tsv)
 WORKSPACE_ID=$(az monitor log-analytics workspace show -g "$RG" -n "$WORKSPACE_NAME" \
@@ -24,7 +34,7 @@ echo "Workspace: $WORKSPACE_NAME ($WORKSPACE_ID)"
 # Get an access token for the Log Analytics API
 TOKEN=$(az account get-access-token --resource https://api.loganalytics.io --query accessToken -o tsv)
 
-# Helper function for running KQL queries
+# Helper function for running KQL queries (used throughout this lab)
 run_query() {
   local query="$1"
   curl -sS -X POST "https://api.loganalytics.io/v1/workspaces/${WORKSPACE_ID}/query" \
@@ -32,45 +42,6 @@ run_query() {
     -H 'Content-Type: application/json' \
     --data "$(jq -nc --arg q "$query" '{query:$q}')" | jq '.tables[0]'
 }
-```
-
----
-
-## Exercise 1: Generate a Traceable Request
-
-First, send a request through the full stack so we have something to trace.
-
-```bash
-# Get the app URL (Front Door if enabled, Container App otherwise)
-APP_URL=$(azd env get-value APP_PUBLIC_URL)
-
-# Send a RAG query
-echo "Sending request to: $APP_URL"
-curl -sS -X POST "${APP_URL}/chat" \
-  -H "Content-Type: application/json" \
-  -d '{
-    "messages": [{"role": "user", "content": "What is Northwind Health Plus?"}],
-    "context": {"overrides": {"top": 3}}
-  }' | jq '{message: .choices[0].message.content[:200], usage: .usage}' 2>/dev/null || \
-  echo "Request sent (response may vary based on search index state)"
-
-echo ""
-echo "Wait 2-5 minutes for logs to appear in Log Analytics before proceeding."
-```
-
----
-
-## Exercise 2: Verify All Resources Send Diagnostic Logs
-
-Check that every resource is configured to send logs to Log Analytics.
-
-```bash
-# List all diagnostic settings in the resource group
-az monitor diagnostic-settings list \
-  --resource "$(az resource list -g "$RG" --query "[?type=='Microsoft.Cdn/profiles'].id | [0]" -o tsv)" 2>/dev/null \
-  --query "[].{name: name, workspace: workspaceId}" -o table && echo "✓ Front Door: logging enabled" || echo "○ Front Door: not deployed"
-
-echo ""
 
 # Check what log tables have data
 run_query "search * | distinct \$table | sort by \$table asc"
