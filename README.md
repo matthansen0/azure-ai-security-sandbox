@@ -296,51 +296,6 @@ After deployment completes, use the Front Door URL (also shown as `APP_PUBLIC_UR
 https://<your-frontdoor-endpoint>.azurefd.net
 ```
 
-## 📁 Project Structure
-
-```
-azure-ai-security-sandbox/
-├── .github/
-│   └── copilot-instructions.md # → symlink to AGENTS.md
-├── app/                        # Application build assets
-│   └── backend/               # Dockerfile only (clones upstream at build time)
-│       └── Dockerfile
-├── docs/                       # Documentation
-├── infra/                      # Bicep infrastructure
-│   ├── main.bicep             # Main orchestration
-│   ├── main.parameters.json   # Default parameters
-│   └── modules/               # Modular Bicep files
-│       ├── ai-services.bicep  # Azure OpenAI + AI Search
-│       ├── container-apps.bicep # Container Apps environment + app
-│       ├── cosmos-db.bicep    # Cosmos DB for chat history
-│       ├── front-door.bicep   # Front Door + WAF
-│       ├── functions.bicep    # Azure Functions for doc processing
-│       ├── monitoring.bicep   # Log Analytics + App Insights
-│       ├── role-assignments.bicep # RBAC for managed identities
-│       ├── security.bicep     # DEPRECATED: Defender-for-Storage settings (moved to infra/addons/defender)
-│       ├── storage.bicep      # Storage account
-│       ├── subscription-security.bicep # DEPRECATED: subscription Defender plans (moved to infra/addons/defender)
-│       └── agents/            # Optional AI Agent infrastructure (useAgents=true)
-│           ├── ai-foundry.bicep       # AI Foundry Hub + Project
-│           ├── agent-api.bicep        # Agent Container App
-│           ├── agent-role-assignments.bicep # Agent RBAC
-│           └── key-vault.bicep        # Key Vault for Foundry
-├── infra/addons/               # Optional post-deploy add-ons
-│   └── defender/               # Defender for Cloud enablement + storage settings
-├── scripts/                    # Post-deploy scripts (Defender enable/rollback)
-├── docs/                       # Documentation
-├── agents/                     # AI Agents (optional)
-│   └── it-admin/              # IT Admin diagnostic agent
-│       ├── app.py             # FastAPI application + agent logic
-│       ├── tools/__init__.py  # Tool definitions + mock data
-│       ├── tests/             # Unit tests (run in preprovision hook)
-│       ├── Dockerfile         # Container build
-│       └── README.md          # Agent API reference
-├── AGENTS.md                   # Instructions for AI coding agents
-├── HOW_IT_WORKS.md             # Deep dive into what got deployed and why
-├── azure.yaml                  # Azure Developer CLI configuration
-└── README.md
-```
 
 ## 📝 Roadmap
 
