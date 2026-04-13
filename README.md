@@ -228,20 +228,6 @@ azd up
 
 #### Subscription-Level Deployment Conflicts
 
-### Deploy with Bash Script (Alternative)
-
-```bash
-# Clone the repository
-git clone https://github.com/matthansen0/azure-ai-security-sandbox.git
-cd azure-ai-security-sandbox
-
-# Login to Azure
-az login
-
-# Deploy everything (interactive prompts for region selection)
-azd up
-```
-
 ### What Gets Deployed
 
 1. **Resource Group** with all resources
