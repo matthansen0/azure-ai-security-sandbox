@@ -1,6 +1,6 @@
 # 🧪 Lab Guides
 
-Hands-on exercises for exploring and verifying the security controls in the Azure AI Security Sandbox. Each lab focuses on a specific security layer and walks you through real verification steps using the Azure CLI, the chat web app, and Log Analytics queries.
+Hands-on exercises for exploring and verifying the security controls in the Azure AI Security Sandbox. Each lab focuses on a specific security layer and walks you through real verification steps — primarily through the **Azure Portal** and the **chat web app**, with optional CLI equivalents for those who prefer the command line.
 
 ## Prerequisites
 
@@ -8,22 +8,28 @@ These labs assume the sandbox is **already deployed** with `azd up`. If you have
 
 > **Lab 6 (AI Agent Security)** requires the optional agent infrastructure. If you need it, redeploy with `azd up --parameter useAgents=true`.
 
-Before starting any lab, load your environment variables:
+### Find Your Resources
+
+1. Open the [Azure Portal](https://portal.azure.com)
+2. Navigate to **Resource Groups** and find `rg-<your-environment-name>`
+3. Bookmark this resource group — you'll use it throughout the labs
+
+### Open the Chat Web App
+
+Get your application URL and open it in a browser — you'll use it to generate traffic throughout the labs:
 
 ```bash
-# Load all azd env values into your shell
-eval "$(azd env get-values | sed 's/^/export /')"
-RG="rg-${AZURE_ENV_NAME}"
-```
-
-Then open the chat web app in your browser — you'll use it throughout the labs to generate traffic:
-
-```bash
-# Get the application URL and open it
 echo "$(azd env get-value APP_PUBLIC_URL)"
 ```
 
-**Tools required:** Azure CLI (`az`), `curl`, `jq` (all pre-installed in the dev container)
+### Optional: CLI Setup
+
+Some exercises include optional CLI commands. If you want to use them, load your environment variables first:
+
+```bash
+eval "$(azd env get-values | sed 's/^/export /')"
+RG="rg-${AZURE_ENV_NAME}"
+```
 
 ## Lab Overview
 
@@ -48,7 +54,8 @@ However, each lab is self-contained and can be completed independently.
 
 ## Tips
 
-- **Use the dev container.** All tools are pre-installed and the Azure CLI is already authenticated.
+- **Portal is primary.** Every exercise shows how to do it in the Azure Portal first, with CLI alternatives marked as optional.
+- **Use the dev container** if you want to run CLI commands — all tools are pre-installed and authenticated.
 - **WAF propagation takes time.** If you just deployed, WAF rule changes can take 30-45 minutes to take effect.
 - **Log Analytics has ingestion delay.** Logs typically appear within 2-5 minutes of an event, but can take up to 10 minutes.
 - **Costs add up.** Remember to `azd down --force --purge` when you're done with the labs.

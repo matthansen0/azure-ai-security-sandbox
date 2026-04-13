@@ -10,137 +10,87 @@
 
 ## Exercise 1: Verify Front Door Is Routing Traffic
 
-Open the chat web app in your browser using the Front Door URL (the `APP_PUBLIC_URL` from the [prerequisites](README.md#prerequisites)). You should see the chat interface load normally.
+1. Open the chat web app using your `APP_PUBLIC_URL` (from the [prerequisites](README.md#prerequisites)). You should see the chat interface load normally.
+2. Ask a question like **"What is Northwind Health Plus?"** to confirm the app is working end-to-end.
+3. Open your browser's **Developer Tools** (F12) → **Network** tab.
+4. Reload the page and click on the main request.
+5. In the **Response Headers**, look for `x-azure-ref` — this confirms the request went through Azure Front Door.
 
-Now verify Front Door is in the path by checking the response headers:
-
-```bash
-# Get the Front Door endpoint and Container App FQDN
-AFD_ENDPOINT=$(azd env get-value APP_PUBLIC_URL)
-CONTAINER_APP_FQDN=$(az containerapp list -g "$RG" \
-  --query "[0].properties.configuration.ingress.fqdn" -o tsv)
-
-# Check for the x-azure-ref header (proves Front Door is routing)
-curl -sS -o /dev/null -w "Status: %{http_code}\nHeaders:\n" -D - \
-  "${AFD_ENDPOINT}" 2>&1 | head -20
-```
-
-**What to look for:**
-- HTTP 200 response
-- `x-azure-ref` header — this confirms the request went through Azure Front Door
-- `x-fd-healthprobe` should NOT be present (that's only for health probes)
-
-Now try loading the Container App URL directly in your browser (`https://<CONTAINER_APP_FQDN>`). You should see the same chat interface:
-
-```bash
-echo "https://$CONTAINER_APP_FQDN"
-```
-
-**Key takeaway:** Both URLs serve the same app. Front Door adds caching, WAF, and global edge presence.
+> **Tip:** You can also find the Container App's direct URL in the Portal. Go to your resource group → find the Container App → **Overview** → **Application Url**. Loading this URL bypasses Front Door entirely. Both serve the same app — Front Door adds caching, WAF, and global edge protection.
 
 ---
 
 ## Exercise 2: Inspect the WAF Policy Configuration
 
-Check what WAF rules are active and what mode they're in.
+1. In the Azure Portal, go to your resource group (`rg-<your-env-name>`).
+2. Find the resource of type **Front Door WAF policy** (named `waf-*`) and click on it.
+3. Under **Settings** → **Policy settings**, note:
+   - **Mode**: Should be `Detection` (logging only, not blocking)
+4. Under **Settings** → **Managed rules**, note the active rule sets:
+   - **Microsoft_DefaultRuleSet 2.1** — OWASP Core Rule Set covering SQL injection, XSS, protocol violations, etc.
+   - **Microsoft_BotManagerRuleSet 1.1** — Bot detection rules
+5. Click into `Microsoft_DefaultRuleSet` to browse the individual rule groups (SQLI, XSS, LFI, RFI, etc.).
 
-```bash
-# Find the WAF policy name
-WAF_NAME=$(az network front-door waf-policy list \
-  -g "$RG" \
-  --query "[0].name" -o tsv 2>/dev/null || \
-  az resource list -g "$RG" \
-    --resource-type "Microsoft.Network/FrontDoorWebApplicationFirewallPolicies" \
-    --query "[0].name" -o tsv)
-echo "WAF Policy: $WAF_NAME"
-
-# Check WAF mode and managed rule sets
-az network front-door waf-policy show \
-  -g "$RG" \
-  -n "$WAF_NAME" \
-  --query "{mode: policySettings.mode, enabled: policySettings.enabledState, ruleSets: managedRules.managedRuleSets[].{type: ruleSetType, version: ruleSetVersion}}" \
-  -o json 2>/dev/null || \
-  az rest --method get \
-    --uri "https://management.azure.com/subscriptions/${AZURE_SUBSCRIPTION_ID}/resourceGroups/${RG}/providers/Microsoft.Network/FrontDoorWebApplicationFirewallPolicies/${WAF_NAME}?api-version=2024-02-01" \
-    --query "{mode: properties.policySettings.mode, enabled: properties.policySettings.enabledState, ruleSets: properties.managedRules.managedRuleSets[].{type: ruleSetType, version: ruleSetVersion}}" -o json
-```
-
-**What to look for:**
-- `mode: Detection` — WAF is logging but not blocking
-- `Microsoft_DefaultRuleSet 2.1` — OWASP Core Rule Set (CRS) covering SQL injection, XSS, etc.
-- `Microsoft_BotManagerRuleSet 1.1` — Bot detection rules
+**Key takeaway:** WAF provides broad protection out of the box with managed rule sets. Detection mode lets you observe what *would* be blocked before you turn on Prevention.
 
 ---
 
-## Exercise 3: Trigger WAF Rules (Detection Mode)
+## Exercise 3: Trigger WAF Rules
 
-Now try crafting requests that WAF rules are designed to catch. We use `curl` here since these are deliberately malicious URL patterns you wouldn't type into the chat UI. In Detection mode, WAF **logs but does not block** them.
+Generate traffic that WAF rules are designed to catch. In Detection mode, these requests **pass through but are logged**.
 
-### 3a. SQL Injection Attempt
+1. In your browser's address bar, paste your Front Door URL with a SQL injection payload appended:
+   ```
+   https://<your-afd-endpoint>.azurefd.net/?id=1 OR 1=1--
+   ```
+   The page should still load (Detection mode doesn't block).
 
-```bash
-curl -sS -o /dev/null -w "Status: %{http_code}\n" \
-  "${AFD_ENDPOINT}/?id=1%20OR%201=1--"
-```
+2. Try an XSS payload:
+   ```
+   https://<your-afd-endpoint>.azurefd.net/?q=<script>alert('xss')</script>
+   ```
 
-### 3b. Cross-Site Scripting (XSS) Attempt
+3. Try a path traversal:
+   ```
+   https://<your-afd-endpoint>.azurefd.net/../../etc/passwd
+   ```
 
-```bash
-curl -sS -o /dev/null -w "Status: %{http_code}\n" \
-  "${AFD_ENDPOINT}/?q=<script>alert('xss')</script>"
-```
+**Expected result:** All requests return normally (HTTP 200 or redirect). WAF logs the violations but does not block them in Detection mode.
 
-### 3c. Path Traversal Attempt
-
-```bash
-curl -sS -o /dev/null -w "Status: %{http_code}\n" \
-  "${AFD_ENDPOINT}/../../etc/passwd"
-```
-
-**Expected result in Detection mode:** All requests return HTTP 200 (or 3xx redirect). WAF logs the violations but does not block them.
-
-> **Note:** If WAF were in Prevention mode, these requests would return HTTP 403.
+> In Prevention mode, these same requests would return **HTTP 403 Forbidden**.
 
 ---
 
-## Exercise 4: Query WAF Logs in Log Analytics
+## Exercise 4: View WAF Logs in the Portal
 
-After a few minutes (log ingestion delay), query Log Analytics to see the WAF detections.
+After a few minutes (log ingestion delay), check what WAF detected.
 
-```bash
-# Get the Log Analytics workspace ID
-WORKSPACE_ID=$(az monitor log-analytics workspace show \
-  -g "$RG" \
-  -n "$(az monitor log-analytics workspace list -g "$RG" --query "[0].name" -o tsv)" \
-  --query customerId -o tsv)
+1. In the Azure Portal, go to your resource group → find the **Log Analytics workspace** (named `log-*`).
+2. Click **Logs** in the left menu. Dismiss the queries gallery if it appears.
+3. Paste this KQL query and click **Run**:
 
-TOKEN=$(az account get-access-token --resource https://api.loganalytics.io --query accessToken -o tsv)
+   ```kusto
+   AzureDiagnostics
+   | where ResourceProvider == "MICROSOFT.CDN" or ResourceProvider == "MICROSOFT.NETWORK"
+   | where Category has "WebApplicationFirewall"
+   | project TimeGenerated, action_s, ruleName_s, host_s, requestUri_s, details_msg_s, policyMode_s
+   | order by TimeGenerated desc
+   | take 20
+   ```
 
-# Query WAF logs for recent detections
-QUERY="AzureDiagnostics
-| where ResourceProvider == 'MICROSOFT.CDN' or ResourceProvider == 'MICROSOFT.NETWORK'
-| where Category == 'FrontDoorWebApplicationFirewallLog' or Category == 'FrontdoorWebApplicationFirewallLog'
-| project TimeGenerated, action_s, ruleName_s, host_s, requestUri_s, details_msg_s, policyMode_s
-| order by TimeGenerated desc
-| take 20"
-
-curl -sS -X POST "https://api.loganalytics.io/v1/workspaces/${WORKSPACE_ID}/query" \
-  -H "Authorization: Bearer ${TOKEN}" \
-  -H 'Content-Type: application/json' \
-  --data "$(jq -nc --arg q "$QUERY" '{query:$q}')" | jq '.tables[0] | {columns: [.columns[].name], rows: .rows[:5]}'
-```
+4. Review the results.
 
 **What to look for:**
-- `action_s`: `Detection` (logged, not blocked)
-- `ruleName_s`: The specific OWASP rule that matched (e.g., `SQL Injection`, `XSS`)
-- `requestUri_s`: The URL that triggered the rule
-- `policyMode_s`: Should show `detection`
+- `action_s`: `Detection` — logged, not blocked
+- `ruleName_s`: The specific rule that matched (e.g., SQL injection, XSS)
+- `requestUri_s`: The URL you tested with the malicious payload
+- `policyMode_s`: `detection`
+
+> **No results?** WAF logs can take 5-10 minutes to appear. Try running the query again after a few minutes.
 
 ---
 
 ## Exercise 5: Understand Detection vs Prevention
-
-Compare what happens when WAF is in each mode.
 
 ### Current Behavior (Detection)
 
@@ -162,26 +112,30 @@ Compare what happens when WAF is in each mode.
 
 ### Optional: Switch to Prevention Mode
 
-If you want to test Prevention mode (requests will be blocked):
+You can test Prevention mode in the Portal:
+
+1. Go to your **Front Door WAF policy** → **Settings** → **Policy settings**.
+2. Change **Mode** from `Detection` to `Prevention`. Click **Save**.
+3. Wait a few minutes for propagation.
+4. Retry the SQL injection URL from Exercise 3 — you should now see a **403 Forbidden** block page.
+5. **Switch back to Detection mode** when done to avoid blocking legitimate traffic.
+
+<details>
+<summary>Optional: CLI equivalent</summary>
 
 ```bash
-# Switch WAF to Prevention mode
+# Switch to Prevention mode
 az rest --method patch \
   --uri "https://management.azure.com/subscriptions/${AZURE_SUBSCRIPTION_ID}/resourceGroups/${RG}/providers/Microsoft.Network/FrontDoorWebApplicationFirewallPolicies/${WAF_NAME}?api-version=2024-02-01" \
   --body '{"properties": {"policySettings": {"mode": "Prevention"}}}'
 
-# Wait a few minutes for propagation, then retry the SQL injection test
-curl -sS -o /dev/null -w "Status: %{http_code}\n" \
-  "${AFD_ENDPOINT}/?id=1%20OR%201=1--"
-# Expected: HTTP 403
+# Switch back to Detection mode
+az rest --method patch \
+  --uri "https://management.azure.com/subscriptions/${AZURE_SUBSCRIPTION_ID}/resourceGroups/${RG}/providers/Microsoft.Network/FrontDoorWebApplicationFirewallPolicies/${WAF_NAME}?api-version=2024-02-01" \
+  --body '{"properties": {"policySettings": {"mode": "Detection"}}}'
 ```
 
-> **Remember to switch back to Detection mode when done:**
-> ```bash
-> az rest --method patch \
->   --uri "https://management.azure.com/subscriptions/${AZURE_SUBSCRIPTION_ID}/resourceGroups/${RG}/providers/Microsoft.Network/FrontDoorWebApplicationFirewallPolicies/${WAF_NAME}?api-version=2024-02-01" \
->   --body '{"properties": {"policySettings": {"mode": "Detection"}}}'
-> ```
+</details>
 
 ---
 
@@ -191,7 +145,7 @@ curl -sS -o /dev/null -w "Status: %{http_code}\n" \
 - WAF in Detection mode logs threats without blocking them
 - Both OWASP and Bot Manager rule sets are active
 - WAF logs appear in Log Analytics under `FrontDoorWebApplicationFirewallLog`
-- Switching between Detection and Prevention mode is a single property change
+- Switching between Detection and Prevention mode is a single setting change in the Portal
 
 ## Next Lab
 

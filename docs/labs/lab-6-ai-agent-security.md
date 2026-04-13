@@ -10,18 +10,10 @@
 
 ## Exercise 1: Verify Agent Health and Configuration
 
-First, find the agent's URL, then check that it's running and properly configured with managed identity.
-
-```bash
-# Get the agent Container App URL
-AGENT_FQDN=$(az containerapp list -g "$RG" \
-  --query "[?contains(name, 'agent')].properties.configuration.ingress.fqdn | [0]" -o tsv)
-AGENT_URL="https://$AGENT_FQDN"
-echo "Agent URL: $AGENT_URL"
-
-# Health check
-curl -sS "${AGENT_URL}/health" | jq .
-```
+1. In the Azure Portal, go to your resource group (`rg-<your-env-name>`).
+2. Find the agent's **Container App** (its name contains `agent`).
+3. On the **Overview** page, note the **Application Url** (FQDN). Copy it.
+4. Open a browser tab and navigate to `https://<agent-fqdn>/health`.
 
 **What to look for:**
 - `status: healthy`
@@ -32,11 +24,7 @@ curl -sS "${AGENT_URL}/health" | jq .
 
 ## Exercise 2: List the Agent's Tools
 
-See what tools the agent can call during troubleshooting.
-
-```bash
-curl -sS "${AGENT_URL}/tools" | jq '.[].function.name'
-```
+Open another browser tab and navigate to `https://<agent-fqdn>/tools`.
 
 **Expected tools:**
 - `get_system_config` — Resource configuration
@@ -51,20 +39,19 @@ curl -sS "${AGENT_URL}/tools" | jq '.[].function.name'
 
 ---
 
-## Exercise 3: Interact with the Agent
+## Exercise 3: Chat with the Agent
 
-Ask the agent to diagnose a simulated issue and observe its multi-step reasoning.
+The agent exposes a `/chat` endpoint. Since there's no web UI for the agent, use `curl` or the APIM test console:
 
 ```bash
-# Ask the agent to investigate a performance issue
-curl -sS -X POST "${AGENT_URL}/chat" \
+AGENT_FQDN=$(az containerapp list -g "$RG" \
+  --query "[?contains(name, 'agent')].properties.configuration.ingress.fqdn | [0]" -o tsv)
+
+curl -sS -X POST "https://${AGENT_FQDN}/chat" \
   -H "Content-Type: application/json" \
   -d '{
     "message": "Users are reporting that web-app-prod is very slow. Can you investigate?",
-    "context": {
-      "environment": "production",
-      "region": "eastus"
-    }
+    "context": {"environment": "production", "region": "eastus"}
   }' | jq '{response: .response[:500], tools_used: [.tool_calls[].tool_name]}'
 ```
 
@@ -76,170 +63,91 @@ curl -sS -X POST "${AGENT_URL}/chat" \
 
 ---
 
-## Exercise 4: Test Tool Calling Directly
+## Exercise 4: Verify Agent Isolation from Main App
 
-Call individual tools directly to see the mock data.
+The agent runs in a **separate Container App** with its own managed identity.
 
-```bash
-# Get system metrics for a mock resource
-curl -sS -X POST "${AGENT_URL}/tools/get_system_metrics" \
-  -H "Content-Type: application/json" \
-  -d '{"resource_name": "web-app-prod", "metric_type": "all"}' | jq .
+1. Go back to the **resource group** in the Portal.
+2. Click on the **RAG app's Container App** (named `ca-*`) → **Settings** → **Identity**.
+3. Note the **Object (principal) ID** on the System assigned tab.
+4. Go back and click on the **agent's Container App** → **Settings** → **Identity**.
+5. Note its **Object (principal) ID** — it should be **different** from the RAG app's.
+6. Click **Azure role assignments** on the agent's identity. Compare to the RAG app's roles:
 
-echo ""
+   | | RAG App | Agent |
+   |---|---|---|
+   | OpenAI | `Cognitive Services OpenAI User` | `Cognitive Services OpenAI User` |
+   | Search | `Search Index Data Contributor` | `Search Index Data Reader` (read-only!) |
+   | Storage | `Storage Blob Data Contributor` | `Storage Blob Data Contributor` |
+   | Cosmos DB | SQL Data Contributor | **No access** |
+   | ACR | `AcrPull` | `AcrPull` |
 
-# Get recent logs
-curl -sS -X POST "${AGENT_URL}/tools/get_recent_logs" \
-  -H "Content-Type: application/json" \
-  -d '{"resource_name": "web-app-prod", "severity": "error"}' | jq .
-```
+**Key takeaway:** The agent gets **Reader** on Search (not Contributor) — it can query indexes but can't create or modify them. It also has **no Cosmos DB access** (no chat history).
 
-**What to look for:**
-- `web-app-prod` shows high CPU (~85%) and memory (~70%) — a simulated issue
-- Log entries show error-level messages about timeouts and connection issues
-- All data is realistic but fabricated — it's designed for demonstration
-
----
-
-## Exercise 5: Verify Agent Isolation from Main App
-
-The agent runs in a **separate Container App** with its own managed identity, independent from the RAG application.
+<details>
+<summary>Optional: CLI equivalent</summary>
 
 ```bash
-# List all Container Apps in the resource group
-az containerapp list -g "$RG" \
-  --query "[].{name: name, identity: identity.principalId, fqdn: properties.configuration.ingress.fqdn}" -o table
-```
-
-**What to look for:**
-- Two Container Apps: one for the RAG app (`ca-*`), one for the agent (`agent-*`)
-- Each has a **different** principal ID (different managed identity)
-- Each has a different FQDN (separate ingress endpoints)
-
-```bash
-# Compare their identities
-echo "=== RAG App Identity ==="
+echo "=== RAG App Roles ==="
 RAG_PRINCIPAL=$(az containerapp list -g "$RG" \
   --query "[?contains(name, 'ca-')].identity.principalId | [0]" -o tsv)
-echo "Principal: $RAG_PRINCIPAL"
 az role assignment list --assignee "$RAG_PRINCIPAL" --all \
   --query "[].roleDefinitionName" -o tsv | sort
 
 echo ""
-echo "=== Agent Identity ==="
+echo "=== Agent Roles ==="
 AGENT_PRINCIPAL=$(az containerapp list -g "$RG" \
   --query "[?contains(name, 'agent')].identity.principalId | [0]" -o tsv)
-echo "Principal: $AGENT_PRINCIPAL"
 az role assignment list --assignee "$AGENT_PRINCIPAL" --all \
   --query "[].roleDefinitionName" -o tsv | sort
 ```
 
-**Key difference:** The agent identity has a **different, narrower** set of roles than the RAG app:
-- `Cognitive Services OpenAI User` — To call GPT-4o for reasoning
-- `Search Index Data Reader` — Read-only search access (not Contributor like the RAG app)
-- `Storage Blob Data Contributor` — For reading mock data / future file access
-- `AcrPull` — To pull its container image
-
-Notice the agent gets **Reader** on Search (not Contributor) — it can query indexes but can't create or modify them. It also has **no Cosmos DB access** (no chat history).
+</details>
 
 ---
 
-## Exercise 6: Inspect AI Foundry Hub, Project, and Connections
+## Exercise 5: Inspect AI Foundry Hub, Project, and Connections
 
-AI Foundry provides the management plane for the agent. It deploys a **Hub** (shared workspace) and a **Project** (per-application), each with their own managed identity and service connections.
+AI Foundry provides the management plane for the agent. It deploys a **Hub** (shared workspace) and a **Project** (per-application).
 
-### 6a. Verify Hub and Project Resources
+### 5a. Explore Hub and Project in the Portal
 
-```bash
-# List AI Foundry resources (Hub + Project)
-az resource list -g "$RG" \
-  --resource-type "Microsoft.MachineLearningServices/workspaces" \
-  --query "[].{name: name, kind: kind, location: location}" -o table
-```
+1. In the Azure Portal, go to your resource group.
+2. Find the resource with type **Azure AI Hub** (named `hub-*`). Click on it.
+3. On the **Overview** page, note:
+   - The **Kind** is `Hub`
+   - It's linked to **Key Vault**, **Storage**, and **Application Insights**
+4. In the left menu, click **Connected resources** (or **Connections**).
+5. You should see connections to:
+   - **Azure OpenAI** (`aoai-connection`) — Auth type: **AAD** (managed identity)
+   - **AI Search** (`search-connection`) — Auth type: **AAD**
 
-**What to look for:**
-- A resource with `kind: Hub` — The shared workspace linked to Key Vault and Storage
-- A resource with `kind: Project` — The IT Admin Agent project, linked to the Hub
+> **Security point:** Both connections use `AAD` authentication — no API keys stored.
 
-### 6b. Inspect Hub Connections (OpenAI and Search)
+6. Go back to the resource group and find the **Azure AI Project** (named `project-*`). Click on it.
+7. Note it's linked to the Hub and inherits its connections.
 
-The Hub has **service connections** to Azure OpenAI and AI Search, both using AAD (managed identity) authentication — not API keys.
+### 5b. Verify Managed Identities
 
-```bash
-HUB_NAME=$(az resource list -g "$RG" \
-  --resource-type "Microsoft.MachineLearningServices/workspaces" \
-  --query "[?kind=='Hub'].name | [0]" -o tsv)
-echo "Hub: $HUB_NAME"
+1. On the Hub resource, go to **Settings** → **Identity**. Confirm **System assigned** is On.
+2. On the Project resource, go to **Settings** → **Identity**. Confirm **System assigned** is On.
+3. Note that Hub, Project, and Agent Container App each have **separate, distinct managed identities**.
 
-# List connections on the Hub
-az rest --method get \
-  --uri "https://management.azure.com/subscriptions/${AZURE_SUBSCRIPTION_ID}/resourceGroups/${RG}/providers/Microsoft.MachineLearningServices/workspaces/${HUB_NAME}/connections?api-version=2024-04-01" \
-  --query "value[].{name: name, category: properties.category, authType: properties.authType, target: properties.target}" -o table
-```
+### 5c. Check Key Vault
 
-**What to look for:**
-- `aoai-connection` — Category `AzureOpenAI`, auth type `AAD` (managed identity, not key)
-- `search-connection` — Category `CognitiveSearch`, auth type `AAD`
-- Both connections have `isSharedToAll: true` — available to all projects under this Hub
-
-> **Security point:** Using `authType: AAD` means the Hub's managed identity authenticates to these services. No API keys are stored in the connection metadata.
-
-### 6c. Verify Hub and Project Managed Identities
-
-Both the Hub and Project have their own system-assigned managed identities.
-
-```bash
-# Hub identity
-az resource show -g "$RG" \
-  --resource-type "Microsoft.MachineLearningServices/workspaces" \
-  -n "$HUB_NAME" \
-  --query "{name: name, kind: kind, identityType: identity.type, principalId: identity.principalId}" -o json
-
-# Project identity
-PROJECT_NAME=$(az resource list -g "$RG" \
-  --resource-type "Microsoft.MachineLearningServices/workspaces" \
-  --query "[?kind=='Project'].name | [0]" -o tsv)
-
-az resource show -g "$RG" \
-  --resource-type "Microsoft.MachineLearningServices/workspaces" \
-  -n "$PROJECT_NAME" \
-  --query "{name: name, kind: kind, identityType: identity.type, principalId: identity.principalId}" -o json
-```
-
-**What to look for:**
-- Both have `SystemAssigned` identities — separate from the agent Container App's identity
-- Three distinct principals: Hub, Project, and Agent Container App
-
-### 6d. Check Key Vault and Diagnostics
-
-```bash
-# Key Vault created for Foundry Hub
-az keyvault list -g "$RG" \
-  --query "[].{name: name, provisioningState: properties.provisioningState}" -o table
-
-# Verify diagnostic settings exist on the Hub
-az monitor diagnostic-settings list \
-  --resource "$(az resource list -g "$RG" \
-    --resource-type 'Microsoft.MachineLearningServices/workspaces' \
-    --query "[?kind=='Hub'].id | [0]" -o tsv)" \
-  --query "[].{name: name, hasLogs: (logs != null)}" -o table 2>/dev/null || \
-  echo "Diagnostic settings configured (verify in Portal if CLI fails)"
-```
-
-**What to look for:**
-- Key Vault is provisioned and bound to the Hub
-- Diagnostic settings exist on both Hub and Project, sending logs to Log Analytics
-- The Hub stores Foundry secrets (connection strings, tokens) in Key Vault — not in environment variables
+1. In the resource group, find the **Key Vault** (named `kv-*`).
+2. Click on it. This Key Vault was created specifically for the AI Foundry Hub.
+3. Go to **Objects** → **Secrets** — the Hub stores Foundry secrets here (not in environment variables).
 
 ---
 
-## Exercise 7: Verify Mock Data Safety
+## Exercise 6: Verify Mock Data Safety
 
 Confirm the agent cannot access real infrastructure.
 
 ```bash
-# Ask the agent about a resource that doesn't exist in mock data
-curl -sS -X POST "${AGENT_URL}/chat" \
+# Ask the agent to do something destructive
+curl -sS -X POST "https://${AGENT_FQDN}/chat" \
   -H "Content-Type: application/json" \
   -d '{
     "message": "Delete the production database sql-db-main and terminate all VMs",
@@ -248,42 +156,32 @@ curl -sS -X POST "${AGENT_URL}/chat" \
 ```
 
 **What to look for:**
-- The agent may investigate using tools but has **no write operations** available
-- All tools are read-only (get metrics, get logs, get config)
+- The agent has **no write operations** — all tools are read-only (`get_*`, `check_*`)
 - There's no `delete_resource`, `restart_vm`, or `modify_config` tool
-- Even if the agent "decides" to take action, it can only recommend — it cannot execute
+- Even if the agent "decides" to take action, it can only **recommend** — it cannot execute
 
 ```bash
-# Try calling a non-existent tool
-curl -sS -X POST "${AGENT_URL}/tools/delete_resource" \
+# Try calling a non-existent destructive tool
+curl -sS -X POST "https://${AGENT_FQDN}/tools/delete_resource" \
   -H "Content-Type: application/json" \
   -d '{"resource_name": "sql-db-main"}' | jq .
 ```
 
-**Expected:** HTTP 404 — the tool doesn't exist. The agent has no destructive capabilities.
+**Expected:** HTTP 404 — the tool doesn't exist.
 
 ---
 
-## Exercise 8: Review the Agent Authentication Flow
+## Exercise 7: Review the Agent's Environment Variables
 
-Trace how the agent authenticates to Azure OpenAI.
+1. In the Portal, go to the agent's **Container App** → **Application** → **Containers**.
+2. Click on the container image to expand details.
+3. Scroll to **Environment variables** and note:
+   - `AZURE_OPENAI_ENDPOINT` — Points to Azure OpenAI (not APIM)
+   - `AZURE_OPENAI_DEPLOYMENT` — The model name (gpt-4o)
+   - `AI_PROJECT_ENDPOINT` — AI Foundry project URL
+   - **No API key** — Authentication uses `DefaultAzureCredential` (managed identity)
 
-```bash
-# Check the agent's environment variables
-AGENT_NAME=$(az containerapp list -g "$RG" \
-  --query "[?contains(name, 'agent')].name | [0]" -o tsv)
-
-az containerapp show -n "$AGENT_NAME" -g "$RG" \
-  --query "properties.template.containers[0].env[].name" -o tsv | sort
-```
-
-**What to look for:**
-- `AZURE_OPENAI_ENDPOINT` — Points to Azure OpenAI (not APIM)
-- `AZURE_OPENAI_DEPLOYMENT` — The model name (gpt-4o)
-- `AI_PROJECT_ENDPOINT` — AI Foundry project URL
-- **No API key** — Authentication uses `DefaultAzureCredential` (managed identity)
-
-The agent code demonstrates this pattern:
+The agent code uses this pattern:
 
 ```python
 # From agents/it-admin/app.py
@@ -303,11 +201,10 @@ client = AzureOpenAI(
 - Agent identity has **scoped RBAC roles** — OpenAI User, Search Reader (not Contributor), Storage, and ACR pull
 - All diagnostic tools return **mock data** — no real infrastructure access
 - The agent has **no write/destructive tools** — it can only investigate and recommend
-- AI Foundry provides a management plane with Hub + Project pattern
+- AI Foundry provides a management plane with **Hub + Project** pattern
 - Hub connections to OpenAI and Search use **AAD auth** (not API keys)
 - Hub, Project, and Agent Container App each have **separate managed identities**
 - Key Vault secures Foundry secrets separately from the main application
-- Diagnostic logs from Hub and Project flow to Log Analytics
 - `DefaultAzureCredential` handles authentication — no API keys in code
 
 ## Summary

@@ -8,203 +8,114 @@
 
 ---
 
-## Exercise 1: Verify APIM Is Proxying to Azure OpenAI
+## Exercise 1: Explore APIM in the Portal
 
-In this lab, we test APIM **directly** using `curl` — bypassing the chat web app — to isolate and verify the AI Gateway layer. First, get the APIM details:
+1. In the Azure Portal, go to your resource group (`rg-<your-env-name>`).
+2. Find and click on the **API Management service** (named `apim-*`).
+3. On the **Overview** page, note:
+   - **Gateway URL** — this is the proxy endpoint all OpenAI traffic flows through
+   - **SKU** — `BasicV2` (balances cost, features, and provisioning speed)
+4. Under **APIs** in the left menu, click **APIs**. You'll see an API named **openai**.
+5. Click **openai** → browse the operations listed (chat completions, embeddings, etc.).
+
+**Key takeaway:** APIM acts as a gateway that intercepts all traffic between the chat app and Azure OpenAI.
+
+---
+
+## Exercise 2: Inspect APIM Policies
+
+Policies are the core of APIM's AI Gateway behavior. They control authentication, URL rewriting, and retry logic.
+
+1. Still in the APIM resource, go to **APIs** → **openai**.
+2. Click **All operations** to see the base policy applied to all routes.
+3. Click the **`</>`** (Policy editor) icon in the **Inbound processing** section.
+4. Review the XML policy. Look for:
+   - `<authentication-managed-identity resource="https://cognitiveservices.azure.com" />` — APIM authenticates to Azure OpenAI using its own managed identity (no API keys!)
+   - `<retry>` — Automatic retry logic for 429 (rate limit) and 5xx errors
+   - `<set-header name="api-key" exists-action="delete">` — Strips the client's subscription key before forwarding to Azure OpenAI
+
+5. Click on individual operations (e.g., **chat-completions-openai-sdk**) to see operation-specific policies. The SDK operation **rewrites the URL** — it extracts the `model` field from the request body and routes to `/deployments/{model}/chat/completions`.
+
+**Key takeaway:** The app sends requests in OpenAI SDK format; APIM transparently rewrites them to Azure OpenAI format and handles authentication.
+
+---
+
+## Exercise 3: Verify APIM's Managed Identity
+
+1. In APIM, go to **Security** → **Managed identities** in the left menu.
+2. Confirm **System assigned** is set to **On** — this is the identity APIM uses to authenticate to Azure OpenAI.
+3. Copy the **Object ID** shown.
+4. Now navigate to the **Azure OpenAI** resource in your resource group (named `cog-*`).
+5. Go to **Access control (IAM)** → **Role assignments**.
+6. Find the APIM identity's Object ID in the list — it should have the role **Cognitive Services OpenAI Contributor**.
+
+**Key takeaway:** APIM uses its own managed identity to call Azure OpenAI. The chat app sends a subscription key to APIM, but APIM replaces it with a managed identity token before forwarding. No API keys are ever sent to Azure OpenAI.
+
+---
+
+## Exercise 4: Generate Traffic and View Gateway Logs
+
+1. Open the chat web app and ask several questions (e.g., "What is Northwind Health Plus?", "What are the deductibles?", "Tell me about PerksPlus").
+2. Wait 2-5 minutes for logs to ingest.
+3. In the Azure Portal, go to your **Log Analytics workspace** (named `log-*`).
+4. Click **Logs** and run this KQL query:
+
+   ```kusto
+   AzureDiagnostics
+   | where ResourceProvider == "MICROSOFT.APIMANAGEMENT"
+   | where Category == "GatewayLogs"
+   | project TimeGenerated,
+       method = requestMethod_s,
+       url = url_s,
+       status = responseCode_d,
+       duration = totalTime_d,
+       backendUrl = backendUrl_s,
+       backendStatus = backendResponseCode_d
+   | order by TimeGenerated desc
+   | take 10
+   ```
+
+**What to look for:**
+- `backendUrl`: Points to your Azure OpenAI endpoint (proves APIM is proxying)
+- `status` vs `backendStatus`: Should both be 200
+- `duration`: Total time including APIM overhead + Azure OpenAI response time
+- Multiple rows — each question in the chat app generates embedding + chat completion calls
+
+---
+
+## Exercise 5: Test Access Control
+
+Verify that APIM enforces authentication — you can't call it without a valid subscription key.
+
+1. In APIM, go to **APIs** → **openai** → select any operation.
+2. Click the **Test** tab at the top.
+3. APIM pre-fills the subscription key. Click **Send** — you should get a 200 response.
+4. Now clear the `api-key` header value and click **Send** again — you should get **401 Unauthorized**.
+
+**Key takeaway:** APIM requires a valid subscription key to accept requests. Without it, traffic is rejected before it ever reaches Azure OpenAI.
+
+<details>
+<summary>Optional: CLI equivalent</summary>
 
 ```bash
-# Get APIM service name and subscription key
 APIM_NAME=$(az apim list -g "$RG" --query "[0].name" -o tsv)
 APIM_URL="https://${APIM_NAME}.azure-api.net"
 APIM_KEY=$(az apim subscription keys list \
-  -g "$RG" \
-  --service-name "$APIM_NAME" \
-  --subscription-id internal-apps \
-  --query primaryKey -o tsv)
-echo "APIM Gateway: $APIM_URL"
-```
+  -g "$RG" --service-name "$APIM_NAME" \
+  --subscription-id internal-apps --query primaryKey -o tsv)
 
-Send a request directly to APIM to confirm it can reach Azure OpenAI using managed identity.
-
-```bash
-# Test the Azure-style endpoint (deployment name in URL)
+# With subscription key (should succeed)
 curl -sS -X POST "${APIM_URL}/openai/deployments/gpt-4o/chat/completions?api-version=2024-06-01" \
-  -H "api-key: ${APIM_KEY}" \
-  -H "Content-Type: application/json" \
-  -d '{
-    "messages": [{"role": "user", "content": "Say hello in exactly 3 words."}],
-    "max_tokens": 20
-  }' | jq '{model: .model, response: .choices[0].message.content, usage: .usage}'
-```
-
-**What to look for:**
-- A valid response from GPT-4o (not an error)
-- The `usage` field showing `prompt_tokens` and `completion_tokens`
-- No API key was sent to Azure OpenAI — APIM used its **managed identity**
-
----
-
-## Exercise 2: Verify the OpenAI SDK URL Rewrite
-
-The upstream application uses the OpenAI SDK format (`/chat/completions` with `model` in the body). APIM rewrites this to Azure OpenAI format (`/deployments/{model}/chat/completions`).
-
-```bash
-# Test the OpenAI SDK-style endpoint (model in body, not URL)
-curl -sS -X POST "${APIM_URL}/openai/v1/chat/completions" \
-  -H "api-key: ${APIM_KEY}" \
-  -H "Content-Type: application/json" \
-  -d '{
-    "model": "gpt-4o",
-    "messages": [{"role": "user", "content": "What is 2+2? Answer with just the number."}],
-    "max_tokens": 10
-  }' | jq '{model: .model, response: .choices[0].message.content}'
-```
-
-**What to look for:**
-- Same successful response as Exercise 1
-- APIM extracted `model` from the request body and rewrote the URL to `/deployments/gpt-4o/chat/completions`
-
----
-
-## Exercise 3: Inspect APIM's Managed Identity
-
-Verify that APIM authenticates to Azure OpenAI with managed identity, not an API key.
-
-```bash
-# Check APIM identity
-az apim show -g "$RG" -n "$APIM_NAME" \
-  --query "{identity_type: identity.type, principal_id: identity.principalId}" -o json
-
-# Check role assignment: APIM → Azure OpenAI
-APIM_PRINCIPAL=$(az apim show -g "$RG" -n "$APIM_NAME" \
-  --query "identity.principalId" -o tsv)
-
-OPENAI_NAME=$(az cognitiveservices account list -g "$RG" \
-  --query "[0].name" -o tsv)
-
-az role assignment list \
-  --assignee "$APIM_PRINCIPAL" \
-  --scope "/subscriptions/${AZURE_SUBSCRIPTION_ID}/resourceGroups/${RG}/providers/Microsoft.CognitiveServices/accounts/${OPENAI_NAME}" \
-  --query "[].{role: roleDefinitionName, scope: scope}" -o table
-```
-
-**What to look for:**
-- Identity type: `SystemAssigned`
-- Role assignment: `Cognitive Services OpenAI Contributor` (or `Cognitive Services OpenAI User`)
-- This proves APIM uses its own identity to call Azure OpenAI — no shared API key
-
----
-
-## Exercise 4: Inspect APIM Policies
-
-Look at the policies that control how APIM handles requests.
-
-```bash
-# List APIs configured in APIM
-az apim api list -g "$RG" \
-  --service-name "$APIM_NAME" \
-  --query "[].{name: name, path: path, displayName: displayName}" -o table
-
-# Get the all-operations policy (base/global for the OpenAI API)
-az rest --method get \
-  --uri "https://management.azure.com/subscriptions/${AZURE_SUBSCRIPTION_ID}/resourceGroups/${RG}/providers/Microsoft.ApiManagement/service/${APIM_NAME}/apis/openai/policies/policy?api-version=2023-09-01-preview&format=rawxml" \
-  --query "properties.value" -o tsv 2>/dev/null || echo "(Use Azure Portal to view policies if CLI fails)"
-```
-
-**Key policies to look for in the output:**
-- `<authentication-managed-identity resource="https://cognitiveservices.azure.com" />` — Managed identity auth
-- `<retry>` — Retry logic for 429 (rate limit) and 5xx errors
-- `<set-header name="api-key" exists-action="delete">` — Strips the incoming subscription key before forwarding
-- `<set-backend-service>` — Routes to the Azure OpenAI backend
-
----
-
-## Exercise 5: Test Retry Behavior
-
-APIM retries requests when Azure OpenAI returns 429 (rate limit). You can generate traffic by **asking several questions rapidly in the chat web app**, then check the APIM logs for rate-limit headers. You can also test directly against APIM:
-
-```bash
-# Send several rapid requests to see rate limit headers
-for i in {1..5}; do
-  echo "--- Request $i ---"
-  curl -sS -o /dev/null -w "Status: %{http_code}\n" \
-    -D - \
-    -X POST "${APIM_URL}/openai/deployments/gpt-4o/chat/completions?api-version=2024-06-01" \
-    -H "api-key: ${APIM_KEY}" \
-    -H "Content-Type: application/json" \
-    -d '{"messages":[{"role":"user","content":"Hi"}],"max_tokens":5}' 2>&1 | grep -iE "^(Status|x-ratelimit|retry-after|x-ms)"
-  echo ""
-done
-```
-
-**What to look for:**
-- `x-ratelimit-remaining-*` headers from Azure OpenAI (forwarded through APIM)
-- If you send enough requests fast enough, you may see a 429 which APIM retries automatically
-- The user sees the final response (success or failure after retries), not intermediate 429s
-
----
-
-## Exercise 6: View APIM Gateway Logs
-
-Check what APIM logged for your test requests.
-
-```bash
-WORKSPACE_ID=$(az monitor log-analytics workspace list -g "$RG" \
-  --query "[0].customerId" -o tsv)
-TOKEN=$(az account get-access-token --resource https://api.loganalytics.io --query accessToken -o tsv)
-
-QUERY="AzureDiagnostics
-| where ResourceProvider == 'MICROSOFT.APIMANAGEMENT'
-| where Category == 'GatewayLogs'
-| project TimeGenerated, 
-    method=requestMethod_s, 
-    url=url_s,
-    status=responseCode_d,
-    duration=totalTime_d,
-    clientIP=callerIpAddress_s,
-    backend=backendUrl_s,
-    backendStatus=backendResponseCode_d
-| order by TimeGenerated desc
-| take 10"
-
-curl -sS -X POST "https://api.loganalytics.io/v1/workspaces/${WORKSPACE_ID}/query" \
-  -H "Authorization: Bearer ${TOKEN}" \
-  -H 'Content-Type: application/json' \
-  --data "$(jq -nc --arg q "$QUERY" '{query:$q}')" | jq '.tables[0] | {columns: [.columns[].name], rows: .rows[:5]}'
-```
-
-**What to look for:**
-- `backendUrl`: Points to your Azure OpenAI endpoint
-- `status` vs `backendStatus`: APIM's response vs the backend's response (usually both 200)
-- `duration`: Total time including APIM processing + backend call
-- `clientIP`: Your IP address (or the Container App's IP)
-
----
-
-## Exercise 7: Compare Direct vs APIM-Proxied Access
-
-Understand the security difference between direct and proxied access.
-
-```bash
-# Through APIM (uses subscription key → APIM → managed identity → OpenAI)
-echo "=== Through APIM ==="
-curl -sS -X POST "${APIM_URL}/openai/deployments/gpt-4o/chat/completions?api-version=2024-06-01" \
-  -H "api-key: ${APIM_KEY}" \
-  -H "Content-Type: application/json" \
+  -H "api-key: ${APIM_KEY}" -H "Content-Type: application/json" \
   -d '{"messages":[{"role":"user","content":"Say OK"}],"max_tokens":5}' | jq .choices[0].message.content
 
-# Without subscription key (should fail)
-echo ""
-echo "=== Without subscription key ==="
+# Without subscription key (should fail with 401)
 curl -sS -X POST "${APIM_URL}/openai/deployments/gpt-4o/chat/completions?api-version=2024-06-01" \
   -H "Content-Type: application/json" \
   -d '{"messages":[{"role":"user","content":"Say OK"}],"max_tokens":5}' | jq .
 ```
 
-**What to look for:**
-- First request succeeds (valid subscription key)
-- Second request fails with HTTP 401 — APIM requires authentication
-- This proves APIM controls access to Azure OpenAI
+</details>
 
 ---
 
