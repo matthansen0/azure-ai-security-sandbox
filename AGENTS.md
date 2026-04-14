@@ -104,6 +104,7 @@ State tracking is written locally under `.defender/` (ignored by git).
 | `infra/modules/agents/ai-foundry.bicep` | AI Foundry Hub + Project for agents |
 | `agents/it-admin/app.py` | IT Admin Agent FastAPI application |
 | `agents/it-admin/tools/__init__.py` | Agent tools + mock data |
+| `docs/labs/lab-7-defender-for-ai.md` | Lab guide for Defender for AI enablement |
 
 
 ## Common Operations

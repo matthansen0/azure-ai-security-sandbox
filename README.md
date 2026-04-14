@@ -292,7 +292,7 @@ https://<your-frontdoor-endpoint>.azurefd.net
 - [x] Bicep-based infrastructure
 - [x] Front Door + WAF
 - [x] Defender for Cloud add-on (enable/rollback): Containers, APIs, Storage, Cosmos DB
-- [ ] Defender for AI add-on enablement (https://github.com/matthansen0/azure-ai-security-sandbox/issues/14)
+- [x] Defender for AI add-on enablement (https://github.com/matthansen0/azure-ai-security-sandbox/issues/14)
 - [x] Azure OpenAI + AI Search integration
 - [x] IT Admin Agent with AI Foundry (optional: `useAgents=true`)
 - [ ] Ingestion pipeline (Container Apps Job)

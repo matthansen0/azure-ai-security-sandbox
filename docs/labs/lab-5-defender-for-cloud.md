@@ -168,4 +168,4 @@ The script only rolls back plans that were changed by `enable-defender.sh` (trac
 
 ## Next Lab
 
-Continue to [Lab 6: AI Agent Security](lab-6-ai-agent-security.md) to explore how the IT Admin Agent is secured.
+Continue to [Lab 6: AI Agent Security](lab-6-ai-agent-security.md) to explore how the IT Admin Agent is secured, or skip to [Lab 7: Defender for AI](lab-7-defender-for-ai.md) for AI-specific threat detection.
