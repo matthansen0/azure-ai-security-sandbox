@@ -219,3 +219,7 @@ You've now explored all six security layers of the Azure AI Security Sandbox:
 6. **AI Agent Security** — Isolated compute, scoped identity, read-only tools
 
 For production, review the gaps listed in [HOW_IT_WORKS.md](../../HOW_IT_WORKS.md#taking-this-to-production).
+
+## Next Lab
+
+Continue to [Lab 7: Defender for AI](lab-7-defender-for-ai.md) to enable AI-specific threat detection for your Azure OpenAI workloads.

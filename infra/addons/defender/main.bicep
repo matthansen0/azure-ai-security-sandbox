@@ -25,6 +25,9 @@ param enableDefenderForApis bool = false
 @description('Enable Defender for Storage plan (subscription-wide). Resource-level settings (malware scanning / SDD) are configured separately per storage account.')
 param enableDefenderForStorage bool = false
 
+@description('Enable Defender for AI Services plan (subscription-wide). Provides threat detection for Azure OpenAI and AI Foundry workloads: jailbreak/prompt injection alerts, credential theft detection, and Defender XDR integration.')
+param enableDefenderForAI bool = false
+
 @description('Optional additional Defender pricing plan names to enable (subscription-wide). Use `az security pricing list` to discover plan names in your subscription.')
 param additionalPricingPlanNames array = []
 
@@ -36,6 +39,7 @@ var requestedPricingPlanNames = concat(
   enableDefenderForContainers ? ['Containers'] : [],
   enableDefenderForApis ? ['Api'] : [],
   enableDefenderForStorage ? ['StorageAccounts'] : [],
+  enableDefenderForAI ? ['AI'] : [],
   additionalPricingPlanNames
 )
 
@@ -52,4 +56,5 @@ output defenderForCosmosDbEnabled bool = doEnable && enableDefenderForCosmosDb
 output defenderForContainersEnabled bool = doEnable && enableDefenderForContainers
 output defenderForApisEnabled bool = doEnable && enableDefenderForApis
 output defenderForStorageEnabled bool = doEnable && enableDefenderForStorage
+output defenderForAIEnabled bool = doEnable && enableDefenderForAI
 output additionalPricingPlanNamesEnabled array = doEnable ? additionalPricingPlanNames : []
