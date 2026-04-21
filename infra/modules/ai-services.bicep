@@ -43,7 +43,7 @@ resource chatDeployment 'Microsoft.CognitiveServices/accounts/deployments@2024-0
     model: {
       format: 'OpenAI'
       name: 'gpt-4o'
-      version: '2024-08-06'
+      version: '2024-11-20'
     }
     raiPolicyName: 'Microsoft.DefaultV2'
   }
