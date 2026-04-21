@@ -431,6 +431,38 @@ resource openaiSdkEmbeddingsV1Policy 'Microsoft.ApiManagement/service/apis/opera
   }
 }
 
+// Responses API (Azure OpenAI v1 surface) - used by the upstream chatreadretrieveread approach
+// Path passes through unchanged: /openai/v1/responses -> backend https://<aoai>/openai/v1/responses
+resource openaiResponsesOperation 'Microsoft.ApiManagement/service/apis/operations@2023-09-01-preview' = {
+  parent: openAiApi
+  name: 'openai-sdk-responses-v1'
+  properties: {
+    displayName: 'OpenAI SDK - Responses (v1)'
+    description: 'Azure OpenAI Responses API (v1 surface); no URL rewrite needed'
+    method: 'POST'
+    urlTemplate: '/v1/responses'
+  }
+}
+
+// GET a specific response by id (SDK may poll / fetch)
+resource openaiResponsesGetOperation 'Microsoft.ApiManagement/service/apis/operations@2023-09-01-preview' = {
+  parent: openAiApi
+  name: 'openai-sdk-responses-v1-get'
+  properties: {
+    displayName: 'OpenAI SDK - Responses Get (v1)'
+    description: 'Retrieve a previously-created response'
+    method: 'GET'
+    urlTemplate: '/v1/responses/{response-id}'
+    templateParameters: [
+      {
+        name: 'response-id'
+        required: true
+        type: 'string'
+      }
+    ]
+  }
+}
+
 // AI Gateway Policy - Applied at API level
 // Includes: Rate limiting, token counting, managed identity auth, retry logic, and caching
 resource openAiApiPolicy 'Microsoft.ApiManagement/service/apis/policies@2023-09-01-preview' = {

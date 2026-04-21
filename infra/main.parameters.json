@@ -6,10 +6,10 @@
       "value": "${AZURE_ENV_NAME}"
     },
     "location": {
-      "value": "${AZURE_LOCATION}"
+      "value": "${AZURE_LOCATION=japaneast}"
     },
     "openAiLocation": {
-      "value": "${AZURE_OPENAI_LOCATION=eastus2}"
+      "value": "${AZURE_OPENAI_LOCATION=japaneast}"
     },
     "principalId": {
       "value": "${AZURE_PRINCIPAL_ID}"

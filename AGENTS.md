@@ -194,7 +194,7 @@ Set via `azd env set <KEY> <VALUE>`:
 
 | Variable | Default | Purpose |
 |----------|---------|---------|
-| `AZURE_LOCATION` | (required) | Deployment region |
+| `AZURE_LOCATION` | (required) | Deployment region (see validated list below) |
 | `AZURE_ENV_NAME` | (required) | Environment name prefix |
 | `AZURE_PRINCIPAL_ID` | (auto) | Deploying user's Object ID (set by azd) |
 | `AZURE_PRINCIPAL_TYPE` | `User` | `User` for interactive, `ServicePrincipal` for CI/CD |
@@ -202,7 +202,28 @@ Set via `azd env set <KEY> <VALUE>`:
 | `APIM_SKU` | `BasicV2` | APIM SKU (BasicV2, StandardV2) |
 | `WAF_MODE` | `Detection` | WAF mode (Detection, Prevention) |
 | `USE_AGENTS` | `false` | Deploy IT Admin Agent + AI Foundry infrastructure |
+| `SKIP_PREFLIGHT` | `false` | Set to `true` to bypass the regional capacity preflight |
 
+### Validated regions
+
+These regions have all required services (Azure AI Search basic, Azure OpenAI `gpt-4o`, `text-embedding-3-small`, APIM BasicV2) confirmed available:
+
+| Region | Geo |
+|---|---|
+| `eastus` | US |
+| `eastus2` | US |
+| `canadaeast` | Canada |
+| `japaneast` | Asia Pacific |
+| `australiaeast` | Asia Pacific |
+
+> Regions like `westus3`, `southcentralus`, `swedencentral`, and `uksouth` have `gpt-4o` but **lack `text-embedding-3-small`** and will fail mid-deploy.
+>
+> If deployment fails with `InsufficientResourcesAvailable` (physical capacity, not quota), switch regions:
+> ```bash
+> azd down --force --purge
+> azd env set AZURE_LOCATION <region>
+> azd up
+> ```
 
 ## RBAC Architecture
 

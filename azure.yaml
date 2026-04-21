@@ -30,10 +30,19 @@ services:
 
 # Hooks for custom deployment logic
 hooks:
-  # Pre-provision: Run tests before deploying
+  # Pre-provision: Run capacity preflight + tests before deploying
   preprovision:
     shell: sh
     run: |
+      # Regional capacity / quota preflight (skippable via SKIP_PREFLIGHT=true)
+      if [ "${SKIP_PREFLIGHT:-false}" != "true" ]; then
+        if [ -x ./scripts/preflight-check.sh ]; then
+          ./scripts/preflight-check.sh || exit 1
+        fi
+      else
+        echo "⚠️  Skipping preflight capacity check (SKIP_PREFLIGHT=true)."
+      fi
+
       echo "Running pre-deployment tests..."
       
       # Run IT Admin Agent tests if they exist

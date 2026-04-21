@@ -73,7 +73,8 @@ The easiest way to deploy is with `azd`:
 git clone --recurse-submodules https://github.com/matthansen0/azure-ai-security-sandbox.git
 cd azure-ai-security-sandbox
 
-# Login to Azure
+# Login to Azure (both are needed – azd for provisioning, az CLI for post-deploy hooks)
+az login
 azd auth login
 
 # Deploy everything with one command
