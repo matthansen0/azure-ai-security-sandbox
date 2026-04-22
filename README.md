@@ -288,26 +288,14 @@ https://<your-frontdoor-endpoint>.azurefd.net
 
 ## 📝 Roadmap
 
-### v1.0 (Current Focus)
-- [x] Container Apps deployment (builds from repo and pushes to ACR)
-- [x] Bicep-based infrastructure
-- [x] Front Door + WAF
-- [x] Defender for Cloud add-on (enable/rollback): Containers, APIs, Storage, Cosmos DB
-- [x] Defender for AI add-on enablement (https://github.com/matthansen0/azure-ai-security-sandbox/issues/14)
-- [x] Azure OpenAI + AI Search integration
-- [x] IT Admin Agent with AI Foundry (optional: `useAgents=true`)
-- [ ] Ingestion pipeline (Container Apps Job)
-- [ ] Document upload and indexing pipeline
-- [ ] Chat with history
-
-### v1.1 (Planned)
-- [ ] APIM + Defender for APIs validation (end-to-end)
-- [ ] Azure AI Content Safety integration
-- [ ] Real architecture diagrams (not ASCII)
-
-### v2.0 (Future)
-- [ ] Microsoft Purview for DLP
+### v2.0 (Current Focus)
+- [x] APIM + Defender for APIs validation (end-to-end)
+- [x] Real architecture diagrams (not ASCII)
 - [ ] SQL data source + Defender for SQL
+- [ ] Azure AI Content Safety integration
+
+### v3.0 (Future)
+- [ ] Microsoft Purview for DLP
 - [ ] Data & AI Security Dashboard
 - [ ] Private endpoint deployment option
 
