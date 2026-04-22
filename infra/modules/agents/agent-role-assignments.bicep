@@ -92,15 +92,9 @@ resource hubOpenAiRole 'Microsoft.Authorization/roleAssignments@2022-04-01' = {
 }
 
 // Hub → Storage
-resource hubStorageRole 'Microsoft.Authorization/roleAssignments@2022-04-01' = {
-  name: guid(storageAccount.id, hubPrincipalId, storageBlobDataContributorRole)
-  scope: storageAccount
-  properties: {
-    principalId: hubPrincipalId
-    roleDefinitionId: storageBlobDataContributorRole
-    principalType: 'ServicePrincipal'
-  }
-}
+// NOTE: AI Foundry workspace creation auto-provisions Storage Blob Data Contributor
+// for the hub identity on the backing storage account. Creating it again here can
+// fail with RoleAssignmentExists when the existing assignment has a different GUID.
 
 // Hub → Search
 resource hubSearchRole 'Microsoft.Authorization/roleAssignments@2022-04-01' = {
@@ -127,15 +121,9 @@ resource projectOpenAiRole 'Microsoft.Authorization/roleAssignments@2022-04-01' 
 }
 
 // Project → Storage
-resource projectStorageRole 'Microsoft.Authorization/roleAssignments@2022-04-01' = {
-  name: guid(storageAccount.id, projectPrincipalId, storageBlobDataContributorRole)
-  scope: storageAccount
-  properties: {
-    principalId: projectPrincipalId
-    roleDefinitionId: storageBlobDataContributorRole
-    principalType: 'ServicePrincipal'
-  }
-}
+// NOTE: AI Foundry workspace creation auto-provisions Storage Blob Data Contributor
+// for the project identity on the backing storage account. Creating it again here
+// can fail with RoleAssignmentExists when the existing assignment has a different GUID.
 
 // Project → Search
 resource projectSearchRole 'Microsoft.Authorization/roleAssignments@2022-04-01' = {
