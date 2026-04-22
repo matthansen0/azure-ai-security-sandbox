@@ -104,6 +104,7 @@ State tracking is written locally under `.defender/` (ignored by git).
 | `infra/modules/agents/ai-foundry.bicep` | AI Foundry Hub + Project for agents |
 | `agents/it-admin/app.py` | IT Admin Agent FastAPI application |
 | `agents/it-admin/tools/__init__.py` | Agent tools + mock data |
+| `docs/labs/lab-7-defender-for-ai.md` | Lab guide for Defender for AI enablement |
 
 
 ## Common Operations
@@ -123,43 +124,49 @@ Manual run:
 cd upstream && ./scripts/prepdocs.sh
 ```
 
-### Test the Application
-```bash
-# Get the Front Door URL
-azd env get-value SERVICE_BACKEND_URI
+### Validate All Functionality
 
-# Test a RAG query
-curl -X POST "https://<afd-endpoint>/chat" \
-  -H "Content-Type: application/json" \
-  -d '{"messages": [{"role": "user", "content": "What is Northwind Health Plus?"}]}'
+Run the comprehensive end-to-end validation script after any `azd up`. It automatically discovers all resources from the active azd environment and checks every component and lab claim.
+
+```bash
+bash scripts/validate.sh
 ```
 
-### Testing with curl (Detailed)
-
-After deployment, test each layer to isolate issues:
+Or to validate a specific named environment:
 
 ```bash
-# 1. Get resource names from azd env
-azd env get-values | grep -E "ENDPOINT|URI|GATEWAY"
+bash scripts/validate.sh my-env-name
+```
 
-# 2. Test Container App directly (bypasses Front Door + APIM)
-CONTAINER_APP_URL=$(az containerapp show -n ca-<token> -g rg-<env> --query "properties.configuration.ingress.fqdn" -o tsv)
-curl -s -X POST "https://${CONTAINER_APP_URL}/chat" \
-  -H "Content-Type: application/json" \
-  -d '{"messages":[{"role":"user","content":"What is Northwind Health Plus?"}]}' | jq .
+The script tests each lab's core claims and prints `PASS / FAIL / SKIP` for each check:
 
-# 3. Test APIM directly (bypasses Front Door, tests APIM → OpenAI)
-APIM_KEY=$(az apim subscription keys list -g rg-<env> --service-name apim-<token> \
-  --subscription-id internal-apps --query primaryKey -o tsv)
-curl -s -X POST "https://apim-<token>.azure-api.net/openai/deployments/gpt-4o/chat/completions?api-version=2024-06-01" \
-  -H "api-key: ${APIM_KEY}" \
-  -H "Content-Type: application/json" \
-  -d '{"messages":[{"role":"user","content":"Say hi"}],"max_tokens":10}' | jq .
+| Lab | What it validates |
+|-----|-------------------|
+| **Lab 1** | Front Door WAF (`x-azure-ref` header), `/chat` HTTP 200, RAG citations returned end-to-end |
+| **Lab 2** | APIM with valid key → 200, APIM without key → 401 |
+| **Lab 3** | Managed identity exists on backend + agent apps, correct RBAC roles assigned (OpenAI, Search, Cosmos) |
+| **Lab 4** | Log Analytics workspace + App Insights exist in resource group |
+| **Lab 5** | Defender for APIs + Defender for Storage at Standard tier; search index populated (758 docs); backend RAG returns citations |
+| **Lab 6** | Agent `/health` healthy, 7 tools registered, `/chat` invokes tools and returns investigation response, `delete_resource` not directly exposed (read-only safety), Foundry Hub + Project deployed |
+| **Lab 7** | Defender for AI at Standard tier, AIPromptEvidence extension enabled |
 
-# 4. Test through Front Door (full path)
-curl -s -X POST "https://<afd-endpoint>/chat" \
+SKIP is shown for checks that require Defender enablement (`scripts/enable-defender.sh`) or optional features not deployed (e.g., agents when `useAgents=false`).
+
+**When to run this:**
+- After `azd up` to confirm a fresh environment is healthy
+- After any infra change to catch regressions
+- When asked to "test all functionality" or "validate the deployment"
+
+### Test the Application (Manual Quick Checks)
+
+```bash
+# Get the Front Door URL
+azd env get-value FRONTDOOR_URL
+
+# Test a RAG query through Front Door
+curl -s -X POST "$(azd env get-value FRONTDOOR_URL)/chat" \
   -H "Content-Type: application/json" \
-  -d '{"messages":[{"role":"user","content":"What is Northwind Health Plus?"}]}' | jq .
+  -d '{"messages": [{"role": "user", "content": "What is Northwind Health Plus?"}],"stream":false}' | jq .output_text
 ```
 
 **Expected responses:**

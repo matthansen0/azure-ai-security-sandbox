@@ -141,6 +141,12 @@ if [[ "${AI_GATEWAY_ENABLED,,}" == "true" || -n "$APIM_SERVICE_NAME" ]]; then
   desired_plans+=("Api")
 fi
 
+# Defender for AI: relevant when Azure OpenAI / AI Foundry is deployed
+OPENAI_ENDPOINT="$(azd env get-value AZURE_OPENAI_ENDPOINT 2>/dev/null || true)"
+if [[ -n "$OPENAI_ENDPOINT" ]]; then
+  desired_plans+=("AI")
+fi
+
 echo "Desired Defender plan names (pre-validation): ${desired_plans[*]}"
 
 plan_exists() {
