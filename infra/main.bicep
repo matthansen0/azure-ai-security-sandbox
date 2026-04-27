@@ -233,31 +233,16 @@ module frontDoor 'modules/front-door.bicep' = if (useAFD) {
 
 // ============ IT Admin Agent Infrastructure (optional) ============
 
-// Key Vault for AI Foundry (required by Foundry Hub)
-module agentKeyVault 'modules/agents/key-vault.bicep' = if (useAgents) {
-  name: 'agentKeyVault'
-  scope: rg
-  params: {
-    location: location
-    tags: tags
-    keyVaultName: '${abbrs.keyVaultVaultsAgent}${resourceToken}'
-    logAnalyticsWorkspaceId: monitoring.outputs.logAnalyticsWorkspaceId
-  }
-}
-
-// AI Foundry Hub and Project for Agent Service
+// AI Foundry account and project for Agent Service
 module aiFoundry 'modules/agents/ai-foundry.bicep' = if (useAgents) {
   name: 'aiFoundry'
   scope: rg
   params: {
     location: location
     tags: tags
-    hubName: '${abbrs.machineLearningHub}${resourceToken}'
+    accountName: '${abbrs.aiFoundryAccounts}${resourceToken}'
     projectName: '${abbrs.machineLearningProject}${resourceToken}'
     logAnalyticsWorkspaceId: monitoring.outputs.logAnalyticsWorkspaceId
-    storageAccountId: storage.outputs.storageAccountId
-    keyVaultId: useAgents ? agentKeyVault.outputs.keyVaultId : ''
-    applicationInsightsId: monitoring.outputs.applicationInsightsId
     openAiAccountName: aiServices.outputs.openAiAccountName
     openAiEndpoint: aiServices.outputs.openAiEndpoint
     searchServiceName: aiServices.outputs.searchServiceName
@@ -290,7 +275,7 @@ module agentRoleAssignments 'modules/agents/agent-role-assignments.bicep' = if (
   name: 'agentRoleAssignments'
   scope: rg
   params: {
-    hubPrincipalId: useAgents ? aiFoundry.outputs.hubPrincipalId : ''
+    foundryAccountPrincipalId: useAgents ? aiFoundry.outputs.accountPrincipalId : ''
     projectPrincipalId: useAgents ? aiFoundry.outputs.projectPrincipalId : ''
     agentApiPrincipalId: useAgents ? agentApi.outputs.identityPrincipalId : ''
     openAiAccountName: aiServices.outputs.openAiAccountName
@@ -355,7 +340,7 @@ output CONTAINER_APP_OPENAI_ENDPOINT string = containerApps.outputs.configuredOp
 output AGENT_ENABLED bool = useAgents
 output AGENT_API_URL string = useAgents ? agentApi.outputs.agentApiUrl : ''
 output AGENT_API_NAME string = useAgents ? agentApi.outputs.containerAppName : ''
-output AI_FOUNDRY_HUB_NAME string = useAgents ? aiFoundry.outputs.hubName : ''
+output AI_FOUNDRY_ACCOUNT_NAME string = useAgents ? aiFoundry.outputs.accountName : ''
 output AI_FOUNDRY_PROJECT_NAME string = useAgents ? aiFoundry.outputs.projectName : ''
 output AI_FOUNDRY_PROJECT_ENDPOINT string = useAgents ? aiFoundry.outputs.projectEndpoint : ''
 output SERVICE_AGENT_IMAGE_NAME string = useAgents ? agentApi.outputs.imageName : ''
