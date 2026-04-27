@@ -106,7 +106,7 @@ resource accountDiagnostics 'Microsoft.Insights/diagnosticSettings@2021-05-01-pr
     workspaceId: logAnalyticsWorkspaceId
     logs: [
       {
-        category: 'Audit'
+        categoryGroup: 'allLogs'
         enabled: true
       }
     ]
@@ -143,4 +143,4 @@ output projectName string = project.name
 output projectPrincipalId string = project.identity.principalId
 
 // Project endpoint for Agent Service API
-output projectEndpoint string = project.properties.endpoints['AI Foundry API']
+output projectEndpoint string = 'https://${account.name}.services.ai.azure.com/api/projects/${project.name}'
