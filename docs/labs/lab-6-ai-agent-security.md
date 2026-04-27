@@ -106,17 +106,17 @@ az role assignment list --assignee "$AGENT_PRINCIPAL" --all \
 
 ---
 
-## Exercise 5: Inspect AI Foundry Hub, Project, and Connections
+## Exercise 5: Inspect AI Foundry Account, Project, and Connections
 
-AI Foundry provides the management plane for the agent. It deploys a **Hub** (shared workspace) and a **Project** (per-application).
+AI Foundry provides the management plane for the agent. It deploys a project-enabled **AI Foundry account** and a first-class **Project** child resource.
 
-### 5a. Explore Hub and Project in the Portal
+### 5a. Explore the Foundry Account and Project in the Portal
 
 1. In the Azure Portal, go to your resource group.
-2. Find the resource with type **Azure AI Hub** (named `hub-*`). Click on it.
+2. Find the resource with type **Azure AI services** (named `aif-*`). Click on it.
 3. On the **Overview** page, note:
-   - The **Kind** is `Hub`
-   - It's linked to **Key Vault**, **Storage**, and **Application Insights**
+   - The **Kind** is `AIServices`
+   - Project management is enabled for AI Foundry
 4. In the left menu, click **Connected resources** (or **Connections**).
 5. You should see connections to:
    - **Azure OpenAI** (`aoai-connection`) — Auth type: **AAD** (managed identity)
@@ -124,20 +124,14 @@ AI Foundry provides the management plane for the agent. It deploys a **Hub** (sh
 
 > **Security point:** Both connections use `AAD` authentication — no API keys stored.
 
-6. Go back to the resource group and find the **Azure AI Project** (named `project-*`). Click on it.
-7. Note it's linked to the Hub and inherits its connections.
+6. Go back to the resource group and find the **Azure AI Project** (named `aiproj-*`). Click on it.
+7. Note it's a child resource under the Foundry account and has its own managed identity.
 
 ### 5b. Verify Managed Identities
 
-1. On the Hub resource, go to **Settings** → **Identity**. Confirm **System assigned** is On.
+1. On the Foundry account resource, go to **Settings** → **Identity**. Confirm **System assigned** is On.
 2. On the Project resource, go to **Settings** → **Identity**. Confirm **System assigned** is On.
-3. Note that Hub, Project, and Agent Container App each have **separate, distinct managed identities**.
-
-### 5c. Check Key Vault
-
-1. In the resource group, find the **Key Vault** (named `kv-*`).
-2. Click on it. This Key Vault was created specifically for the AI Foundry Hub.
-3. Go to **Objects** → **Secrets** — the Hub stores Foundry secrets here (not in environment variables).
+3. Note that the Foundry account, Project, and Agent Container App each have **separate, distinct managed identities**.
 
 ---
 
@@ -201,10 +195,9 @@ client = AzureOpenAI(
 - Agent identity has **scoped RBAC roles** — OpenAI User, Search Reader (not Contributor), Storage, and ACR pull
 - All diagnostic tools return **mock data** — no real infrastructure access
 - The agent has **no write/destructive tools** — it can only investigate and recommend
-- AI Foundry provides a management plane with **Hub + Project** pattern
-- Hub connections to OpenAI and Search use **AAD auth** (not API keys)
-- Hub, Project, and Agent Container App each have **separate managed identities**
-- Key Vault secures Foundry secrets separately from the main application
+- AI Foundry provides a project-based management plane with an AI Services account + Project
+- Foundry connections to OpenAI and Search use **AAD auth** (not API keys)
+- Foundry account, Project, and Agent Container App each have **separate managed identities**
 - `DefaultAzureCredential` handles authentication — no API keys in code
 
 ## Summary

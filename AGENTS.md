@@ -50,16 +50,18 @@ User → Azure Front Door (WAF) → Azure API Management (AI Gateway) → Contai
   - `subscription-security.bicep` - DEPRECATED (subscription-wide Defender plans moved to add-on)
   - `storage.bicep` - Blob storage for documents
 - `modules/agents/` - **AI Agent infrastructure (optional)**:
-  - `ai-foundry.bicep` - AI Foundry Hub + Project for Agent Service
+  - `ai-foundry.bicep` - Project-based AI Foundry account + Project for Agent Service
   - `agent-api.bicep` - Container App for agent API
   - `agent-role-assignments.bicep` - RBAC for agent managed identities
-  - `key-vault.bicep` - Key Vault for AI Foundry
 
 ### IT Admin Agent (`/agents/it-admin`)
 - `app.py` - FastAPI application with agent logic
 - `tools/__init__.py` - Tool definitions and mock implementations
 - `Dockerfile` - Container build for agent API
 - `README.md` - Agent documentation and API reference
+- `tests/test_api.py` - API/unit regression tests for health, tools, chat, and safety endpoints
+- `tests/test_tools.py` - Unit/regression tests for tool definitions, mock resources, and tool handlers
+- `tests/conftest.py` - Shared pytest fixtures for agent API/tool tests
 - **Deploy with:** `azd up --parameter useAgents=true`
 
 
@@ -101,7 +103,7 @@ State tracking is written locally under `.defender/` (ignored by git).
 | `infra/main.bicep` | All configurable parameters live here |
 | `infra/modules/api-management.bicep` | AI Gateway policies - auth + retry (optional rate limits/token logging) |
 | `infra/modules/front-door.bicep` | WAF rules and mode configuration |
-| `infra/modules/agents/ai-foundry.bicep` | AI Foundry Hub + Project for agents |
+| `infra/modules/agents/ai-foundry.bicep` | Project-based AI Foundry account + Project for agents |
 | `agents/it-admin/app.py` | IT Admin Agent FastAPI application |
 | `agents/it-admin/tools/__init__.py` | Agent tools + mock data |
 | `docs/labs/lab-7-defender-for-ai.md` | Lab guide for Defender for AI enablement |
@@ -147,7 +149,7 @@ The script tests each lab's core claims and prints `PASS / FAIL / SKIP` for each
 | **Lab 3** | Managed identity exists on backend + agent apps, correct RBAC roles assigned (OpenAI, Search, Cosmos) |
 | **Lab 4** | Log Analytics workspace + App Insights exist in resource group |
 | **Lab 5** | Defender for APIs + Defender for Storage at Standard tier; search index populated (758 docs); backend RAG returns citations |
-| **Lab 6** | Agent `/health` healthy, 7 tools registered, `/chat` invokes tools and returns investigation response, `delete_resource` not directly exposed (read-only safety), Foundry Hub + Project deployed |
+| **Lab 6** | Agent `/health` healthy, 7 tools registered, `/chat` invokes tools and returns investigation response, `delete_resource` not directly exposed (read-only safety), project-based Foundry account + Project deployed |
 | **Lab 7** | Defender for AI at Standard tier, AIPromptEvidence extension enabled |
 
 SKIP is shown for checks that require Defender enablement (`scripts/enable-defender.sh`) or optional features not deployed (e.g., agents when `useAgents=false`).
@@ -156,6 +158,25 @@ SKIP is shown for checks that require Defender enablement (`scripts/enable-defen
 - After `azd up` to confirm a fresh environment is healthy
 - After any infra change to catch regressions
 - When asked to "test all functionality" or "validate the deployment"
+
+### Run Agent Unit/Regression Tests
+
+The Azure Developer CLI preprovision hook runs these tests automatically before deployment. To run them manually:
+
+```bash
+python3 -m venv .venv-tests
+./.venv-tests/bin/pip install -q pytest pytest-asyncio httpx -r ./agents/it-admin/requirements.txt
+cd agents/it-admin
+../../.venv-tests/bin/python -m pytest tests/ -v --tb=short
+```
+
+Agent test coverage:
+
+| File | Coverage |
+|------|----------|
+| `agents/it-admin/tests/test_api.py` | FastAPI health, tools, tool invocation, chat, content type, conversation, and destructive-tool safety behavior |
+| `agents/it-admin/tests/test_tools.py` | Tool schema, mock resource data, handler behavior, edge cases, and agentic investigation scenarios |
+| `agents/it-admin/tests/conftest.py` | Shared fixtures for chat requests, tool arguments, and mock resource lists |
 
 ### Test the Application (Manual Quick Checks)
 
@@ -261,7 +282,7 @@ When adding new security features:
 | Most resources | < 30 seconds |
 | Cosmos DB | ~1-2 minutes |
 | APIM (BasicV2) | ~5-10 minutes |
-| AI Foundry Hub + Project | ~2-3 minutes |
+| AI Foundry account + Project | ~2-3 minutes |
 | Agent Container App | ~3-5 minutes |
 | Front Door | ~10-15 minutes |
 | AFD WAF propagation | ~30-45 minutes |

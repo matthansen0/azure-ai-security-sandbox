@@ -369,17 +369,21 @@ except: print('false', 0)
     fail "L6: delete_resource endpoint returned HTTP $HTTP_DEL (expected 404/405)"
   fi
 
-  # 6e. Foundry Hub + Project exist
-  FOUNDRY_WORKSPACES=$(az resource list -g "$RG" \
-    --resource-type Microsoft.MachineLearningServices/workspaces \
+  # 6e. Project-based Foundry account + Project exist
+  FOUNDRY_ACCOUNTS=$(az resource list -g "$RG" \
+    --resource-type Microsoft.CognitiveServices/accounts \
+    --query "[?kind=='AIServices' && properties.allowProjectManagement==\`true\`].name" -o tsv 2>/dev/null || true)
+  FOUNDRY_PROJECTS=$(az resource list -g "$RG" \
+    --resource-type Microsoft.CognitiveServices/accounts/projects \
     --query '[].name' -o tsv 2>/dev/null || true)
-  FOUNDRY_COUNT=$(echo "$FOUNDRY_WORKSPACES" | grep -c . || true)
-  if [[ "$FOUNDRY_COUNT" -ge 2 ]]; then
-    pass "L6: AI Foundry Hub + Project deployed ($FOUNDRY_WORKSPACES)"
-  elif [[ "$FOUNDRY_COUNT" -ge 1 ]]; then
-    fail "L6: Only one Foundry workspace found (expected Hub + Project): $FOUNDRY_WORKSPACES"
+  if [[ -n "$FOUNDRY_ACCOUNTS" && -n "$FOUNDRY_PROJECTS" ]]; then
+    pass "L6: Project-based AI Foundry account + Project deployed (account: $FOUNDRY_ACCOUNTS, project: $FOUNDRY_PROJECTS)"
+  elif [[ -n "$FOUNDRY_ACCOUNTS" ]]; then
+    fail "L6: Foundry account exists but no project found: $FOUNDRY_ACCOUNTS"
+  elif [[ -n "$FOUNDRY_PROJECTS" ]]; then
+    fail "L6: Foundry project exists but no project-enabled account found: $FOUNDRY_PROJECTS"
   else
-    fail "L6: No AI Foundry workspaces found"
+    fail "L6: No project-based AI Foundry account/project found"
   fi
 else
   skip "L6: Agent container app not found — deploy with: azd up --parameter useAgents=true"

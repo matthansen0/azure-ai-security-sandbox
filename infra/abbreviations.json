@@ -108,6 +108,5 @@
   "webSitesFunctions": "func-",
   "webStaticSites": "stapp-",
   "aiFoundryAccounts": "aif-",
-  "machineLearningProject": "aiproj-",
-  "keyVaultVaultsAgent": "kvagent-"
+  "machineLearningProject": "aiproj-"
 }

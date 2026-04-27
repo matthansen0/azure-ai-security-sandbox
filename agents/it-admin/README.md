@@ -5,7 +5,7 @@ An AI-powered troubleshooting agent for IT administrators. This agent helps diag
 ## Overview
 
 The IT Admin Agent demonstrates:
-- **Azure AI Foundry integration** - Uses AI Foundry Hub and Project for agent management
+- **Azure AI Foundry integration** - Uses a project-based AI Foundry account and Project for agent management
 - **Tool calling** - Agent uses tools to gather information about systems
 - **Multi-step reasoning** - Diagnoses issues through iterative investigation
 - **Mock data** - Realistic Azure infrastructure data for demonstration
@@ -23,7 +23,7 @@ The IT Admin Agent demonstrates:
                     ▼                           ▼                           ▼
          ┌──────────────────┐       ┌──────────────────┐       ┌──────────────────┐
          │  Azure OpenAI    │       │  Tool Functions   │       │  AI Foundry      │
-         │  (GPT-4o)        │       │  (Mock Data)      │       │  (Hub + Project) │
+         │  (GPT-4o)        │       │  (Mock Data)      │       │ (Account+Project)│
          └──────────────────┘       └──────────────────┘       └──────────────────┘
 ```
 
@@ -38,8 +38,7 @@ azd up --parameter useAgents=true
 ```
 
 This will provision:
-- AI Foundry Hub and Project
-- Key Vault for Foundry
+- Project-based AI Foundry account and Project
 - Agent API Container App
 - Required role assignments
 
@@ -235,6 +234,19 @@ def get_real_metrics(resource_id: str, metric_type: str):
 - Add content safety filters
 - Implement tool access controls (which tools can be called)
 - Add human-in-the-loop for sensitive operations
+
+## Tests
+
+Run the agent unit/regression suite from this directory:
+
+```bash
+python -m pytest tests/ -v --tb=short
+```
+
+Test files:
+- `tests/test_api.py` — FastAPI health, tools, tool invocation, chat, content type, conversation, and destructive-tool safety coverage
+- `tests/test_tools.py` — tool schema, mock resource data, tool handler, edge case, and agentic scenario coverage
+- `tests/conftest.py` — shared pytest fixtures for chat requests, tool arguments, and mock resource lists
 
 ## Local Development
 

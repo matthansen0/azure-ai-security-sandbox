@@ -41,7 +41,7 @@ A self-contained Azure AI security demonstration platform featuring a RAG (Retri
 | **Defender for Storage** | Data Protection | Optional (enabled via add-on script): malware scanning on upload, sensitive data discovery (PII/PCI/PHI) |
 | **Container Apps** | Serverless Containers | Auto-scaling, managed environment, no infrastructure to manage |
 | **Defender for Cosmos DB** | Database Security | Optional Defender for Cloud plan (enabled via add-on script) |
-| **AI Foundry + Agents** | Agent Security | Optional IT Admin Agent with managed identity auth, Key Vault for secrets, RBAC-controlled access (set `useAgents=true` to deploy) |
+| **AI Foundry + Agents** | Agent Security | Optional IT Admin Agent with project-based AI Foundry, managed identity auth, and RBAC-controlled access (set `useAgents=true` to deploy) |
 | **Managed Identities** | Zero Secrets | No keys in code—all services authenticate via Azure AD |
 
 ### 🚪 API Management as AI Gateway
@@ -118,13 +118,31 @@ Or disable both for the fastest development cycle:
 azd up --parameter useAFD=false --parameter useAPIM=false
 ```
 
-To deploy with the optional **IT Admin Agent** (adds AI Foundry Hub + Project, Key Vault, and agent Container App):
+To deploy with the optional **IT Admin Agent** (adds a project-based AI Foundry account + Project and agent Container App):
 
 ```bash
 azd up --parameter useAgents=true
 ```
 
 When Front Door is disabled, `APP_PUBLIC_URL` points directly to the Container App FQDN.
+
+### Tests and Validation
+
+The `azd up` preprovision hook runs the IT Admin Agent pytest suite before deployment. You can run it manually:
+
+```bash
+python3 -m venv .venv-tests
+./.venv-tests/bin/pip install -q pytest pytest-asyncio httpx -r ./agents/it-admin/requirements.txt
+cd agents/it-admin
+../../.venv-tests/bin/python -m pytest tests/ -v --tb=short
+```
+
+Agent test files:
+- `agents/it-admin/tests/test_api.py` — FastAPI health, tools, tool invocation, chat, content type, conversation, and destructive-tool safety coverage
+- `agents/it-admin/tests/test_tools.py` — unit/regression coverage for tool schemas, mock resource data, tool handlers, edge cases, and agentic scenarios
+- `agents/it-admin/tests/conftest.py` — shared pytest fixtures
+
+After deployment, run `bash scripts/validate.sh` for end-to-end regression validation across the labs, including the optional project-based AI Foundry account + Project checks when `useAgents=true`.
 
 #### Other azd Commands
 
@@ -242,8 +260,7 @@ azd up
 9. **Azure Front Door + WAF** for edge protection (WAF defaults to Detection mode, set `useAFD=false` to skip)
 10. **Microsoft Defender for Cloud** is not enabled in the core deployment; enable plans and per-resource Defender settings via the add-on script
 11. *(Optional)* **IT Admin Agent** - AI-powered troubleshooting agent with tool calling (set `useAgents=true`)
-12. *(Optional)* **Azure AI Foundry** Hub + Project for agent management (deployed with agents)
-13. *(Optional)* **Azure Key Vault** for AI Foundry secrets (deployed with agents)
+12. *(Optional)* **Azure AI Foundry** account + Project for agent management (deployed with agents)
 
 ### 💰 Cost Estimation
 
@@ -268,8 +285,7 @@ Estimated costs for running the sandbox (low/dev usage). Actual costs vary based
 | Container Registry (Basic) | ~$5 | Image storage |
 | Storage Account | ~$1-2 | Blob storage for docs |
 | Log Analytics + App Insights | ~$5-10 | Pay per GB ingested |
-| AI Foundry Hub + Project | ~$0-5 | Optional (`useAgents=true`); management plane |
-| Key Vault | ~$1-2 | Optional (`useAgents=true`); secrets for Foundry |
+| AI Foundry account + Project | ~$0-5 | Optional (`useAgents=true`); management plane |
 | Agent Container App | ~$5-10 | Optional (`useAgents=true`); consumption-based |
 
 > **💡 Cost-saving tips:**
