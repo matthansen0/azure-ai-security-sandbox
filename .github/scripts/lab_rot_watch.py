@@ -27,6 +27,33 @@ BICEP_RESOURCE_PATTERN = re.compile(r"'([^'@]+)@(\d{4}-\d{2}-\d{2})(-preview)?'"
 REQ_LINE_PATTERN = re.compile(r"^([A-Za-z0-9_.-]+)(\[[^\]]+\])?\s*([<>=!~]{1,2})\s*([A-Za-z0-9_.+-]+)")
 URL_PATTERN = re.compile(r"https?://[^\s)\]>\"']+")
 MD_LINK_PATTERN = re.compile(r"\[[^\]]+\]\(([^)]+)\)")
+DOCKER_FROM_PATTERN = re.compile(r"^\s*FROM\s+([^\s]+)", re.IGNORECASE | re.MULTILINE)
+ARG_ASSIGN_PATTERN = re.compile(r"^\s*ARG\s+([A-Za-z_][A-Za-z0-9_]*)=(.+?)\s*$", re.MULTILINE)
+
+IGNORED_PATH_PARTS = {
+    ".git",
+    ".venv",
+    ".venv-tests",
+    "venv",
+    "node_modules",
+    "__pycache__",
+}
+
+
+def path_is_ignored(path: pathlib.Path) -> bool:
+    return any(part in IGNORED_PATH_PARTS for part in path.parts)
+
+
+def rglob_in_dirs(base_dirs: list[pathlib.Path], pattern: str) -> list[pathlib.Path]:
+    paths: list[pathlib.Path] = []
+    for base in base_dirs:
+        if not base.exists() or not base.is_dir():
+            continue
+        for p in base.rglob(pattern):
+            if path_is_ignored(p):
+                continue
+            paths.append(p)
+    return paths
 
 
 @dataclass
@@ -268,6 +295,106 @@ def check_sdk_drift(requirement_files: list[pathlib.Path], repo_root: pathlib.Pa
     return findings
 
 
+def _normalize_repo_url(url: str) -> str:
+    cleaned = url.strip().lower()
+    cleaned = cleaned.removeprefix("https://")
+    cleaned = cleaned.removeprefix("http://")
+    cleaned = cleaned.removeprefix("git@")
+    cleaned = cleaned.replace(":", "/")
+    if cleaned.endswith(".git"):
+        cleaned = cleaned[:-4]
+    return cleaned
+
+
+def check_external_deployment_dependencies(repo_root: pathlib.Path) -> list[Finding]:
+    findings: list[Finding] = []
+
+    azure_yaml = repo_root / "azure.yaml"
+    dockerfile = repo_root / "app" / "backend" / "Dockerfile"
+    gitmodules = repo_root / ".gitmodules"
+
+    azure_text = read_text(azure_yaml) if azure_yaml.exists() else ""
+    docker_text = read_text(dockerfile) if dockerfile.exists() else ""
+    gitmodules_text = read_text(gitmodules) if gitmodules.exists() else ""
+
+    args = {m.group(1): m.group(2).strip() for m in ARG_ASSIGN_PATTERN.finditer(docker_text)}
+    upstream_repo = args.get("UPSTREAM_REPO", "")
+    upstream_ref = args.get("UPSTREAM_REF", "")
+
+    # 1) Build-time upstream source pinning.
+    if upstream_repo and upstream_ref:
+        is_commit_sha = bool(re.fullmatch(r"[0-9a-fA-F]{7,40}", upstream_ref))
+        if upstream_ref.lower() in {"main", "master", "latest", "head"}:
+            findings.append(
+                Finding(
+                    "high",
+                    "Build-time upstream ref is mutable",
+                    f"app/backend/Dockerfile uses UPSTREAM_REF={upstream_ref}. Pin to a commit SHA for reproducible deploys.",
+                )
+            )
+        elif not is_commit_sha:
+            findings.append(
+                Finding(
+                    "medium",
+                    "Build-time upstream ref is not commit-pinned",
+                    f"app/backend/Dockerfile uses UPSTREAM_REF={upstream_ref}. Consider pinning to a commit SHA.",
+                )
+            )
+
+    # 2) Submodule and build-time clone consistency.
+    submodule_url_match = re.search(r"\[submodule\s+\"upstream\"\][\s\S]*?url\s*=\s*(.+)", gitmodules_text)
+    submodule_url = submodule_url_match.group(1).strip() if submodule_url_match else ""
+
+    if submodule_url and upstream_repo:
+        if _normalize_repo_url(submodule_url) != _normalize_repo_url(upstream_repo):
+            findings.append(
+                Finding(
+                    "high",
+                    "Submodule source and Docker build source differ",
+                    f".gitmodules upstream URL ({submodule_url}) differs from app/backend/Dockerfile UPSTREAM_REPO ({upstream_repo}).",
+                )
+            )
+
+    uses_submodule_in_hooks = "git submodule update --init --recursive" in azure_text
+    uses_build_time_clone = "git clone" in docker_text and "UPSTREAM_REPO" in docker_text
+    if uses_submodule_in_hooks and uses_build_time_clone:
+        findings.append(
+            Finding(
+                "medium",
+                "Dual upstream dependency paths detected",
+                "azure.yaml postprovision uses upstream submodule while app/backend/Dockerfile clones upstream during image build; these can drift.",
+            )
+        )
+
+    # 3) Mutable base image tags in Dockerfiles.
+    dockerfiles = [
+        p
+        for p in rglob_in_dirs([repo_root / "app", repo_root / "agents"], "Dockerfile")
+        if "upstream" not in p.parts
+    ]
+    seen_images: set[tuple[str, str]] = set()
+    for df in dockerfiles:
+        text = read_text(df)
+        for image in DOCKER_FROM_PATTERN.findall(text):
+            if image.startswith("${"):
+                continue
+            if "@sha256:" in image:
+                continue
+            key = (str(df.relative_to(repo_root)), image)
+            if key in seen_images:
+                continue
+            seen_images.add(key)
+            findings.append(
+                Finding(
+                    "low",
+                    "Container base image is tag-based",
+                    f"{df.relative_to(repo_root)} uses FROM {image} without digest pinning.",
+                )
+            )
+
+    return findings
+
+
 def check_lab_validator_parity(repo_root: pathlib.Path, labs_dir: pathlib.Path, validate_path: pathlib.Path) -> list[Finding]:
     findings: list[Finding] = []
 
@@ -383,11 +510,11 @@ def run(
     bicep_files = [
         p
         for p in (repo_root / "infra").rglob("*.bicep")
-        if "upstream" not in p.parts
+        if "upstream" not in p.parts and not path_is_ignored(p)
     ]
     requirement_files = [
         p
-        for p in repo_root.rglob("requirements*.txt")
+        for p in rglob_in_dirs([repo_root / "app", repo_root / "agents"], "requirements*.txt")
         if "upstream" not in p.parts
     ]
 
@@ -398,6 +525,7 @@ def run(
         findings.extend(check_external_links(markdown_files, repo_root, max_urls=max_external_urls))
     findings.extend(check_preview_api_age(bicep_files, repo_root))
     findings.extend(check_sdk_drift(requirement_files, repo_root))
+    findings.extend(check_external_deployment_dependencies(repo_root))
 
     # Stable sort for deterministic issue bodies.
     findings.sort(key=lambda f: (f.severity, f.title, f.detail))
