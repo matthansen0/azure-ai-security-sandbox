@@ -26,6 +26,12 @@ pass() { echo -e "${GREEN}PASS${NC}  $1"; ((PASS++)); }
 fail() { echo -e "${RED}FAIL${NC}  $1"; ((FAIL++)); }
 skip() { echo -e "${YELLOW}SKIP${NC}  $1"; ((SKIP++)); }
 header() { echo ""; echo "--- $1 ---"; }
+get_azd_value() {
+  local value
+  if value=$(azd env get-value "$1" 2>/dev/null); then
+    printf '%s' "$value"
+  fi
+}
 
 # ---------------------------------------------------------------------------
 # Select environment
@@ -40,18 +46,25 @@ fi
 # ---------------------------------------------------------------------------
 header "Discovering environment"
 
-RG=$(azd env get-value AZURE_RESOURCE_GROUP 2>/dev/null || true)
+RG=$(get_azd_value RESOURCE_GROUP_NAME)
 if [[ -z "$RG" ]]; then
-  ENV_NAME=$(azd env get-value AZURE_ENV_NAME 2>/dev/null)
+  RG=$(get_azd_value AZURE_RESOURCE_GROUP)
+fi
+if [[ -z "$RG" ]]; then
+  ENV_NAME=$(get_azd_value AZURE_ENV_NAME)
+  if [[ -z "$ENV_NAME" ]]; then
+    echo "Unable to resolve the active azd environment name." >&2
+    exit 1
+  fi
   RG="rg-$ENV_NAME"
 fi
 echo "Resource group: $RG"
 
 # Container apps
 BACKEND_CA=$(az containerapp list -g "$RG" --query \
-  '[?contains(name, `ca-`) && !contains(name, `agent`)].name | [0]' -o tsv 2>/dev/null)
+  '[?tags."azd-service-name" == `backend`].name | [0]' -o tsv 2>/dev/null)
 AGENT_CA=$(az containerapp list -g "$RG" --query \
-  '[?contains(name, `ca-agent`)].name | [0]' -o tsv 2>/dev/null)
+  '[?tags."azd-service-name" == `agent`].name | [0]' -o tsv 2>/dev/null)
 
 BACKEND_FQDN=$(az containerapp show -g "$RG" -n "$BACKEND_CA" \
   --query 'properties.configuration.ingress.fqdn' -o tsv 2>/dev/null)
@@ -62,9 +75,9 @@ if [[ -n "$AGENT_CA" ]]; then
 fi
 
 # azd env values
-FD_URL=$(azd env get-value FRONTDOOR_URL 2>/dev/null || true)
-APIM_URL=$(azd env get-value APIM_GATEWAY_URL 2>/dev/null || true)
-APIM_NAME=$(azd env get-value APIM_SERVICE_NAME 2>/dev/null || true)
+FD_URL=$(get_azd_value FRONTDOOR_URL)
+APIM_URL=$(get_azd_value APIM_GATEWAY_URL)
+APIM_NAME=$(get_azd_value APIM_SERVICE_NAME)
 
 # APIM key
 APIM_KEY=""
@@ -179,6 +192,7 @@ fi
 # 3b. OpenAI User role assigned to backend identity
 SUB=$(az account show --query id -o tsv 2>/dev/null)
 OPENAI_ROLE=$(az role assignment list --assignee "$BACKEND_IDENTITY" \
+  --all \
   --query "[?contains(roleDefinitionName,'OpenAI')].roleDefinitionName | [0]" \
   -o tsv 2>/dev/null || true)
 if [[ -n "$OPENAI_ROLE" ]]; then
@@ -189,6 +203,7 @@ fi
 
 # 3c. Search role assigned
 SEARCH_ROLE=$(az role assignment list --assignee "$BACKEND_IDENTITY" \
+  --all \
   --query "[?contains(roleDefinitionName,'Search')].roleDefinitionName | [0]" \
   -o tsv 2>/dev/null || true)
 if [[ -n "$SEARCH_ROLE" ]]; then
@@ -233,17 +248,21 @@ else
   fail "L4: No Application Insights found in $RG"
 fi
 
-# 4c. Container App has diagnostic settings pointing to Log Analytics
+# 4c. Container Apps Environment sends logs to Log Analytics
 if [[ -n "$LOG_WS" ]]; then
-  WS_ID=$(az monitor log-analytics workspace show -g "$RG" -n "$LOG_WS" \
-    --query id -o tsv 2>/dev/null || true)
-  DIAG=$(az monitor diagnostic-settings list \
-    --resource "$(az containerapp show -g "$RG" -n "$BACKEND_CA" --query id -o tsv 2>/dev/null)" \
-    --query "[?workspaceId=='$WS_ID'].name | [0]" -o tsv 2>/dev/null || true)
-  if [[ -n "$DIAG" ]]; then
-    pass "L4: Diagnostic settings link backend container app to Log Analytics"
+  WS_CUSTOMER_ID=$(az resource show -g "$RG" -n "$LOG_WS" \
+    --resource-type Microsoft.OperationalInsights/workspaces \
+    --api-version 2023-09-01 --query properties.customerId -o tsv 2>/dev/null || true)
+  CA_ENV_ID=$(az containerapp show -g "$RG" -n "$BACKEND_CA" \
+    --query properties.environmentId -o tsv 2>/dev/null || true)
+  CA_ENV_NAME="${CA_ENV_ID##*/}"
+  CA_LOG_CONFIG=$(az containerapp env show -g "$RG" -n "$CA_ENV_NAME" \
+    --query 'properties.appLogsConfiguration.[destination,logAnalyticsConfiguration.customerId]' \
+    -o tsv 2>/dev/null || true)
+  if [[ "$CA_LOG_CONFIG" == *"log-analytics"* && "$CA_LOG_CONFIG" == *"$WS_CUSTOMER_ID"* ]]; then
+    pass "L4: Container Apps Environment sends logs to Log Analytics"
   else
-    skip "L4: Diagnostic settings check requires 'az monitor' (broken in this dev container) — verify in portal"
+    fail "L4: Container Apps Environment is not linked to the expected Log Analytics workspace"
   fi
 fi
 
@@ -258,6 +277,8 @@ DEFENDER_API=$(az rest --method get \
   --query 'properties.pricingTier' -o tsv 2>/dev/null || true)
 if [[ "$DEFENDER_API" == "Standard" ]]; then
   pass "L5: Defender for APIs → Standard"
+elif [[ "$DEFENDER_API" == "Free" ]]; then
+  skip "L5: Defender for APIs add-on is not enabled"
 elif [[ -n "$DEFENDER_API" ]]; then
   fail "L5: Defender for APIs → $DEFENDER_API (expected Standard)"
 else
@@ -270,6 +291,8 @@ DEFENDER_STORAGE=$(az rest --method get \
   --query 'properties.pricingTier' -o tsv 2>/dev/null || true)
 if [[ "$DEFENDER_STORAGE" == "Standard" ]]; then
   pass "L5: Defender for Storage → Standard"
+elif [[ "$DEFENDER_STORAGE" == "Free" ]]; then
+  skip "L5: Defender for Storage add-on is not enabled"
 elif [[ -n "$DEFENDER_STORAGE" ]]; then
   fail "L5: Defender for Storage → $DEFENDER_STORAGE (expected Standard; run scripts/enable-defender.sh)"
 else
@@ -297,21 +320,22 @@ else
 fi
 
 # 5b-ii. Backend /chat returns citations
-RAG_RESP=$(curl -sf -m 60 -X POST "https://$BACKEND_FQDN/chat" \
+HTTP_BACKEND=$(curl -s -o /tmp/val-backend-chat.json -w '%{http_code}' -m 60 \
+  -X POST "https://$BACKEND_FQDN/chat" \
   -H 'Content-Type: application/json' \
-  -d '{"messages":[{"role":"user","content":"What dental coverage does Northwind Health Plus offer?"}],"stream":false}' 2>/dev/null || echo "{}")
+  -d '{"messages":[{"role":"user","content":"What dental coverage does Northwind Health Plus offer?"}],"stream":false}' 2>/dev/null)
 CITATIONS=$(python3 -c "
-import json, sys
+import json
 try:
-  d=json.loads('''$RAG_RESP''')
+  d=json.load(open('/tmp/val-backend-chat.json'))
   txt=d.get('context',{}).get('data_points',{}).get('text',[])
   print(len(txt))
 except: print(0)
 " 2>/dev/null || echo 0)
-if [[ "$CITATIONS" -ge 1 ]]; then
+if [[ "$HTTP_BACKEND" == "200" && "$CITATIONS" -ge 1 ]]; then
   pass "L5b: Backend /chat returns RAG citations ($CITATIONS citations)"
 else
-  fail "L5b: Backend /chat returned no citations"
+  fail "L5b: Backend /chat HTTP $HTTP_BACKEND with $CITATIONS citations"
 fi
 
 # ---------------------------------------------------------------------------
@@ -322,11 +346,11 @@ header "Lab 6: IT Admin Agent"
 if [[ -n "$AGENT_FQDN" ]]; then
   # 6a. Health endpoint
   AGENT_HEALTH=$(curl -sf -m 20 "https://$AGENT_FQDN/health" 2>/dev/null \
-    | python3 -c "import json,sys; d=json.load(sys.stdin); print(d.get('status','?'), d.get('openai_configured','?'), d.get('project_configured','?'))" 2>/dev/null || echo "unreachable")
-  if [[ "$AGENT_HEALTH" == *"healthy"* ]]; then
+    | python3 -c "import json,sys; d=json.load(sys.stdin); print(f\"{d.get('status','?')}|{str(d.get('openai_configured',False)).lower()}|{str(d.get('project_configured',False)).lower()}\")" 2>/dev/null || echo "unreachable")
+  if [[ "$AGENT_HEALTH" == "healthy|true|true" ]]; then
     pass "L6: Agent /health → $AGENT_HEALTH"
   else
-    fail "L6: Agent /health → $AGENT_HEALTH"
+    fail "L6: Agent /health → $AGENT_HEALTH (expected healthy|true|true)"
   fi
 
   # 6b. Tools registered
@@ -341,21 +365,22 @@ if [[ -n "$AGENT_FQDN" ]]; then
   fi
 
   # 6c. Agent /chat calls tools and returns an answer
-  AGENT_CHAT=$(curl -sf -m 90 -X POST "https://$AGENT_FQDN/chat" \
+  HTTP_AGENT=$(curl -s -o /tmp/val-agent-chat.json -w '%{http_code}' -m 90 \
+    -X POST "https://$AGENT_FQDN/chat" \
     -H 'Content-Type: application/json' \
-    -d '{"message":"Users are reporting that web-app-prod is very slow. Can you investigate?","context":{"environment":"production","region":"eastus"}}' 2>/dev/null || echo "{}")
+    -d '{"message":"Users are reporting that web-app-prod is very slow. Can you investigate?","context":{"environment":"production","region":"eastus"}}' 2>/dev/null)
   HAS_RESP=$(python3 -c "
 import json
 try:
-  d=json.loads(r'''$AGENT_CHAT''')
+  d=json.load(open('/tmp/val-agent-chat.json'))
   calls=[t.get('tool_name','?') for t in d.get('tool_calls',[])]
   print('true' if d.get('response') else 'false', len(calls))
 except: print('false', 0)
 " 2>/dev/null)
-  if [[ "$HAS_RESP" == true* ]]; then
+  if [[ "$HTTP_AGENT" == "200" && "$HAS_RESP" == true* ]]; then
     pass "L6: Agent /chat returned response with tool calls ($HAS_RESP)"
   else
-    fail "L6: Agent /chat response missing or no tool calls"
+    fail "L6: Agent /chat HTTP $HTTP_AGENT; response/tool calls: $HAS_RESP"
   fi
 
   # 6d. delete_resource endpoint not exposed (returns 404) — read-only safety
@@ -370,9 +395,8 @@ except: print('false', 0)
   fi
 
   # 6e. Project-based Foundry account + Project exist
-  FOUNDRY_ACCOUNTS=$(az resource list -g "$RG" \
-    --resource-type Microsoft.CognitiveServices/accounts \
-    --query "[?kind=='AIServices' && properties.allowProjectManagement==\`true\`].name" -o tsv 2>/dev/null || true)
+  FOUNDRY_ACCOUNTS=$(az cognitiveservices account list -g "$RG" \
+    --query "[?kind=='AIServices' && properties.allowProjectManagement].name" -o tsv 2>/dev/null || true)
   FOUNDRY_PROJECTS=$(az resource list -g "$RG" \
     --resource-type Microsoft.CognitiveServices/accounts/projects \
     --query '[].name' -o tsv 2>/dev/null || true)
@@ -410,6 +434,8 @@ if [[ "$DEFENDER_AI_TIER" == "Standard" ]]; then
   else
     skip "L7: AIPromptEvidence extension not confirmed (may require enable-defender.sh)"
   fi
+elif [[ "$DEFENDER_AI_TIER" == "Free" ]]; then
+  skip "L7: Defender for AI add-on is not enabled"
 elif [[ -n "$DEFENDER_AI_TIER" ]]; then
   fail "L7: Defender for AI → $DEFENDER_AI_TIER (expected Standard; run scripts/enable-defender.sh)"
 else

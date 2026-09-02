@@ -3,9 +3,9 @@
 
 FROM python:3.12-bookworm AS builder
 
-# Install git and Node.js 20 for frontend build
+# Install git and Node.js 22 for frontend build
 RUN apt-get update && apt-get install -y git curl && \
-    curl -fsSL https://deb.nodesource.com/setup_20.x | bash - && \
+    curl -fsSL https://deb.nodesource.com/setup_22.x | bash - && \
     apt-get install -y nodejs && \
     rm -rf /var/lib/apt/lists/*
 

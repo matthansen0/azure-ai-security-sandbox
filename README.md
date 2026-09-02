@@ -128,13 +128,19 @@ When Front Door is disabled, `APP_PUBLIC_URL` points directly to the Container A
 
 ### Tests and Validation
 
-The `azd up` preprovision hook runs the IT Admin Agent pytest suite before deployment. You can run it manually:
+The [CI workflow](.github/workflows/ci.yml) compiles Bicep, checks shell syntax, tests the regional preflight, and runs the IT Admin Agent pytest suite for every pull request and push to `main`. The `azd up` preprovision hook repeats the preflight and agent tests before deployment.
+
+Run the offline checks manually:
 
 ```bash
 python3 -m venv .venv-tests
 ./.venv-tests/bin/pip install -q pytest pytest-asyncio httpx -r ./agents/it-admin/requirements.txt
 cd agents/it-admin
 ../../.venv-tests/bin/python -m pytest tests/ -v --tb=short
+cd ../..
+bash scripts/tests/preflight-check.test.sh
+bash -n scripts/*.sh scripts/tests/*.sh
+az bicep build --file infra/main.bicep --outfile /tmp/azure-ai-security-sandbox-main.json
 ```
 
 Agent test files:
@@ -143,6 +149,8 @@ Agent test files:
 - `agents/it-admin/tests/conftest.py` — shared pytest fixtures
 
 After deployment, run `bash scripts/validate.sh` for end-to-end regression validation across the labs, including the optional project-based AI Foundry account + Project checks when `useAgents=true`.
+
+The postprovision hook stages the upstream sample data outside the read-only submodule before indexing. If an Azure Policy disables the Storage public endpoint, [scripts/prepdocs-search-only.py](scripts/prepdocs-search-only.py) preserves upstream parsing, embeddings, and Search ingestion while omitting Blob page uploads.
 
 #### Other azd Commands
 
@@ -159,8 +167,10 @@ You can customize the deployment with optional parameters:
 
 ```bash
 # Deploy to a specific region
-azd up --location canadacentral
+azd up --location japaneast
 ```
+
+The preprovision hook verifies Azure AI Search quota plus the exact `gpt-4o` and `text-embedding-3-small` model versions, Standard SKU availability, and TPM capacity before resources are created.
 
 Other useful parameters:
 
@@ -170,6 +180,7 @@ azd up --parameter useAFD=false
 
 # Disable Azure API Management (AI Gateway)
 azd up --parameter useAPIM=false
+```
 
 
 ### Optional: Enable Defender Plans (Add-on)

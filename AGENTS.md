@@ -104,6 +104,9 @@ State tracking is written locally under `.defender/` (ignored by git).
 | `infra/modules/api-management.bicep` | AI Gateway policies - auth + retry (optional rate limits/token logging) |
 | `infra/modules/front-door.bicep` | WAF rules and mode configuration |
 | `infra/modules/agents/ai-foundry.bicep` | Project-based AI Foundry account + Project for agents |
+| `.github/workflows/ci.yml` | Pull-request gate for Bicep, shell, preflight, and agent tests |
+| `scripts/preflight-check.sh` | Regional Search and exact OpenAI model/SKU/quota validation |
+| `scripts/prepdocs-search-only.py` | Policy-aware Search ingestion fallback when Blob public access is disabled |
 | `agents/it-admin/app.py` | IT Admin Agent FastAPI application |
 | `agents/it-admin/tools/__init__.py` | Agent tools + mock data |
 | `docs/labs/lab-7-defender-for-ai.md` | Lab guide for Defender for AI enablement |
@@ -121,6 +124,7 @@ azd up --parameter useAgents=true # Deploy with IT Admin Agent
 
 ### Populate Search Index
 The `postprovision` hook in `azure.yaml` automatically runs prepdocs after provisioning.
+It stages data outside the read-only submodule and uses `scripts/prepdocs-search-only.py` when Azure Policy disables the Storage public endpoint.
 Manual run:
 ```bash
 cd upstream && ./scripts/prepdocs.sh
@@ -158,6 +162,19 @@ SKIP is shown for checks that require Defender enablement (`scripts/enable-defen
 - After `azd up` to confirm a fresh environment is healthy
 - After any infra change to catch regressions
 - When asked to "test all functionality" or "validate the deployment"
+
+### Run Offline CI Checks
+
+The GitHub Actions workflow runs these checks for pull requests and pushes to `main`:
+
+```bash
+./.venv-tests/bin/python -m pytest agents/it-admin/tests -q
+bash scripts/tests/preflight-check.test.sh
+bash -n scripts/*.sh scripts/tests/*.sh
+az bicep build --file infra/main.bicep --outfile /tmp/azure-ai-security-sandbox-main.json
+```
+
+The live preprovision hook also validates Search quota, exact model versions, Standard SKU availability, and available capacity for both `gpt-4o` and `text-embedding-3-small`.
 
 ### Run Agent Unit/Regression Tests
 
@@ -230,7 +247,7 @@ Set via `azd env set <KEY> <VALUE>`:
 | `APIM_SKU` | `BasicV2` | APIM SKU (BasicV2, StandardV2) |
 | `WAF_MODE` | `Detection` | WAF mode (Detection, Prevention) |
 | `USE_AGENTS` | `false` | Deploy IT Admin Agent + AI Foundry infrastructure |
-| `SKIP_PREFLIGHT` | `false` | Set to `true` to bypass the regional capacity preflight |
+| `SKIP_PREFLIGHT` | `false` | Set to `true` to bypass Search and exact model/SKU/quota preflight checks |
 
 ### Validated regions
 
@@ -255,9 +272,14 @@ These regions have all required services (Azure AI Search basic, Azure OpenAI `g
 
 ## RBAC Architecture
 
-The deployment creates role assignments for TWO principals:
-1. **Container App managed identity** - Runtime access (OpenAI, Search, Storage, Cosmos)
+The core deployment creates role assignments for two principals:
+1. **Backend Container App managed identity** - Runtime access (OpenAI, Search, Storage, Cosmos)
 2. **Deploying user** - Prepdocs access (uploads blobs, creates search indexes)
+
+When `useAgents=true`, it also assigns least-privilege roles to:
+3. **Agent API Container App managed identity** - OpenAI, Search read, and Storage access
+4. **Foundry account managed identity** - Connected OpenAI, Search, and Foundry access
+5. **Foundry Project managed identity** - Connected OpenAI, Search read, and Foundry developer access
 
 This dual-assignment pattern ensures:
 - The app runs with least-privilege managed identity

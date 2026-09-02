@@ -92,7 +92,6 @@ hooks:
           --endpoint-name $FRONTDOOR_ENDPOINT_NAME \
           --name default-route \
           --origin-group containerapp-origin-group \
-          --origin-path / \
           --patterns-to-match "/*" \
           --forwarding-protocol HttpsOnly \
           --https-redirect Enabled \
@@ -133,10 +132,35 @@ hooks:
         export AZURE_STORAGE_RESOURCE_GROUP="$RESOURCE_GROUP_NAME"
         export AZURE_OPENAI_EMB_MODEL_NAME="text-embedding-3-small"
         export AZURE_OPENAI_EMB_DIMENSIONS="1536"
+
+        # Stage input outside the read-only upstream submodule. Its checksum
+        # files are repository state, not proof that this index is populated.
+        PREPDOCS_DATA_DIR=$(mktemp -d)
+        trap 'rm -rf "$PREPDOCS_DATA_DIR"' EXIT
+        cp -R ./upstream/data/. "$PREPDOCS_DATA_DIR/"
+
+        SEARCH_COUNT=$(az rest --method get \
+          --uri "https://${AZURE_SEARCH_SERVICE}.search.windows.net/indexes/documents/docs/\$count?api-version=2024-07-01" \
+          --resource https://search.azure.com \
+          --query @ -o tsv 2>/dev/null || echo 0)
+        if [ "${SEARCH_COUNT:-0}" -eq 0 ] 2>/dev/null; then
+          echo "Search index is empty; forcing a complete document ingestion..."
+          find "$PREPDOCS_DATA_DIR" -type f -name '*.md5' -delete
+        fi
+
+        PREPDOCS_SCRIPT="./upstream/app/backend/prepdocs.py"
+        STORAGE_PUBLIC_ACCESS=$(az storage account show \
+          --resource-group "$RESOURCE_GROUP_NAME" \
+          --name "$AZURE_STORAGE_ACCOUNT" \
+          --query publicNetworkAccess -o tsv 2>/dev/null || echo Disabled)
+        if [ "$STORAGE_PUBLIC_ACCESS" != "Enabled" ]; then
+          echo "Storage public access is disabled; indexing without blob page uploads."
+          PREPDOCS_SCRIPT="./scripts/prepdocs-search-only.py"
+        fi
         
         # Run prepdocs with upstream data (local strategy, not integrated vectorizer)
         echo "Indexing documents..."
-        ./.venv/bin/python ./upstream/app/backend/prepdocs.py './upstream/data/*' --verbose
+        ./.venv/bin/python "$PREPDOCS_SCRIPT" "$PREPDOCS_DATA_DIR/*" --verbose
       else
         echo "Warning: upstream submodule not found. Run 'git submodule update --init'"
       fi

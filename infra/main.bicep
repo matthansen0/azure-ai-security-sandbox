@@ -145,7 +145,7 @@ module apimRoleAssignments 'modules/role-assignments.bicep' = if (useAPIM) {
   name: 'apimRoleAssignments'
   scope: rg
   params: {
-    principalId: useAPIM ? apiManagement.outputs.apimIdentityPrincipalId : ''
+    principalId: apiManagement.?outputs.apimIdentityPrincipalId ?? ''
     openAiAccountName: aiServices.outputs.openAiAccountName
     searchServiceName: aiServices.outputs.searchServiceName
     storageAccountName: storage.outputs.storageAccountName
@@ -184,8 +184,8 @@ module containerApps 'modules/container-apps.bicep' = {
     cosmosDbContainerName: cosmosDb.outputs.containerName
     // AI Gateway routing: When APIM is enabled, route all OpenAI traffic through APIM
     // Best practice: All Azure OpenAI access goes through APIM for rate limiting, token tracking, and observability
-    apimOpenAiEndpoint: useAPIM ? '${apiManagement.outputs.apimGatewayUrl}/${apiManagement.outputs.openAiApiPath}' : ''
-    apimSubscriptionKey: useAPIM ? apiManagement.outputs.internalSubscriptionKey : ''
+    apimOpenAiEndpoint: useAPIM ? '${apiManagement.?outputs.apimGatewayUrl ?? ''}/${apiManagement.?outputs.openAiApiPath ?? ''}' : ''
+    apimSubscriptionKey: apiManagement.?outputs.internalSubscriptionKey ?? ''
   }
 }
 
@@ -265,7 +265,7 @@ module agentApi 'modules/agents/agent-api.bicep' = if (useAgents) {
     applicationInsightsConnectionString: monitoring.outputs.applicationInsightsConnectionString
     openAiEndpoint: aiServices.outputs.openAiEndpoint
     openAiDeploymentName: aiServices.outputs.chatDeploymentName
-    projectEndpoint: useAgents ? aiFoundry.outputs.projectEndpoint : ''
+    projectEndpoint: aiFoundry.?outputs.projectEndpoint ?? ''
     logAnalyticsWorkspaceId: monitoring.outputs.logAnalyticsWorkspaceId
   }
 }
@@ -275,9 +275,9 @@ module agentRoleAssignments 'modules/agents/agent-role-assignments.bicep' = if (
   name: 'agentRoleAssignments'
   scope: rg
   params: {
-    foundryAccountPrincipalId: useAgents ? aiFoundry.outputs.accountPrincipalId : ''
-    projectPrincipalId: useAgents ? aiFoundry.outputs.projectPrincipalId : ''
-    agentApiPrincipalId: useAgents ? agentApi.outputs.identityPrincipalId : ''
+    foundryAccountPrincipalId: aiFoundry.?outputs.accountPrincipalId ?? ''
+    projectPrincipalId: aiFoundry.?outputs.projectPrincipalId ?? ''
+    agentApiPrincipalId: agentApi.?outputs.identityPrincipalId ?? ''
     openAiAccountName: aiServices.outputs.openAiAccountName
     searchServiceName: aiServices.outputs.searchServiceName
     storageAccountName: storage.outputs.storageAccountName
@@ -304,13 +304,13 @@ output APP_INTERNAL_URL string = 'https://${containerApps.outputs.containerAppFq
 output SERVICE_BACKEND_IMAGE_NAME string = containerApps.outputs.imageName
 
 // Primary public URL (Front Door if enabled, otherwise Container App direct)
-output APP_PUBLIC_URL string = useAFD ? 'https://${frontDoor.outputs.frontDoorEndpointHostName}' : 'https://${containerApps.outputs.containerAppFqdn}'
+output APP_PUBLIC_URL string = useAFD ? 'https://${frontDoor.?outputs.frontDoorEndpointHostName ?? ''}' : 'https://${containerApps.outputs.containerAppFqdn}'
 
 // Front Door outputs (only when AFD is enabled)
-output FRONTDOOR_ENDPOINT string = useAFD ? frontDoor.outputs.frontDoorEndpointHostName : ''
-output FRONTDOOR_URL string = useAFD ? 'https://${frontDoor.outputs.frontDoorEndpointHostName}' : ''
-output FRONTDOOR_PROFILE_NAME string = useAFD ? frontDoor.outputs.frontDoorProfileName : ''
-output FRONTDOOR_ENDPOINT_NAME string = useAFD ? frontDoor.outputs.frontDoorEndpointName : ''
+output FRONTDOOR_ENDPOINT string = frontDoor.?outputs.frontDoorEndpointHostName ?? ''
+output FRONTDOOR_URL string = useAFD ? 'https://${frontDoor.?outputs.frontDoorEndpointHostName ?? ''}' : ''
+output FRONTDOOR_PROFILE_NAME string = frontDoor.?outputs.frontDoorProfileName ?? ''
+output FRONTDOOR_ENDPOINT_NAME string = frontDoor.?outputs.frontDoorEndpointName ?? ''
 
 // AI Services outputs
 output AZURE_OPENAI_ENDPOINT string = aiServices.outputs.openAiEndpoint
@@ -328,9 +328,9 @@ output AZURE_STORAGE_BLOB_ENDPOINT string = storage.outputs.blobEndpoint
 output AZURE_COSMOSDB_ENDPOINT string = cosmosDb.outputs.cosmosDbEndpoint
 
 // API Management outputs (only when APIM is enabled)
-output APIM_GATEWAY_URL string = useAPIM ? apiManagement.outputs.apimGatewayUrl : ''
-output APIM_SERVICE_NAME string = useAPIM ? apiManagement.outputs.apimServiceName : ''
-output AZURE_OPENAI_VIA_APIM string = useAPIM ? '${apiManagement.outputs.apimGatewayUrl}/${apiManagement.outputs.openAiApiPath}' : ''
+output APIM_GATEWAY_URL string = apiManagement.?outputs.apimGatewayUrl ?? ''
+output APIM_SERVICE_NAME string = apiManagement.?outputs.apimServiceName ?? ''
+output AZURE_OPENAI_VIA_APIM string = useAPIM ? '${apiManagement.?outputs.apimGatewayUrl ?? ''}/${apiManagement.?outputs.openAiApiPath ?? ''}' : ''
 
 // AI Gateway routing status - indicates if Container App routes through APIM
 output AI_GATEWAY_ENABLED bool = useAPIM
@@ -338,9 +338,9 @@ output CONTAINER_APP_OPENAI_ENDPOINT string = containerApps.outputs.configuredOp
 
 // Agent outputs (only when agents are enabled)
 output AGENT_ENABLED bool = useAgents
-output AGENT_API_URL string = useAgents ? agentApi.outputs.agentApiUrl : ''
-output AGENT_API_NAME string = useAgents ? agentApi.outputs.containerAppName : ''
-output AI_FOUNDRY_ACCOUNT_NAME string = useAgents ? aiFoundry.outputs.accountName : ''
-output AI_FOUNDRY_PROJECT_NAME string = useAgents ? aiFoundry.outputs.projectName : ''
-output AI_FOUNDRY_PROJECT_ENDPOINT string = useAgents ? aiFoundry.outputs.projectEndpoint : ''
-output SERVICE_AGENT_IMAGE_NAME string = useAgents ? agentApi.outputs.imageName : ''
+output AGENT_API_URL string = agentApi.?outputs.agentApiUrl ?? ''
+output AGENT_API_NAME string = agentApi.?outputs.containerAppName ?? ''
+output AI_FOUNDRY_ACCOUNT_NAME string = aiFoundry.?outputs.accountName ?? ''
+output AI_FOUNDRY_PROJECT_NAME string = aiFoundry.?outputs.projectName ?? ''
+output AI_FOUNDRY_PROJECT_ENDPOINT string = aiFoundry.?outputs.projectEndpoint ?? ''
+output SERVICE_AGENT_IMAGE_NAME string = agentApi.?outputs.imageName ?? ''
