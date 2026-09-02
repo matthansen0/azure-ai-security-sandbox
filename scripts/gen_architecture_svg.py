@@ -134,7 +134,7 @@ svg_parts.append(text(330, 575, "(useAgents=true)", 16, "#b45309", "start"))
 
 agent_boxes = [
     (40, 615, 200, 80, "#fff3bf", "#f59e0b", ["IT Admin Agent", "(FastAPI)"], True),
-    (310, 615, 200, 80, "#eebefa", "#ec4899", ["AI Foundry", "(Hub + Project)"], True),
+    (310, 615, 200, 80, "#eebefa", "#ec4899", ["AI Foundry", "(Account + Project)"], True),
     (580, 615, 140, 80, "#ffc9c9", "#ef4444", ["Key Vault"], True),
 ]
 for bx, by, bw, bh, bfill, bstroke, lines, dashed in agent_boxes:

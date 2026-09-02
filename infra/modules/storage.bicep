@@ -19,9 +19,10 @@ resource storageAccount 'Microsoft.Storage/storageAccounts@2023-05-01' = {
   properties: {
     accessTier: 'Hot'
     allowBlobPublicAccess: false
-    allowSharedKeyAccess: true // Required for some SDK operations; use RBAC where possible
+    allowSharedKeyAccess: false
     minimumTlsVersion: 'TLS1_2'
     supportsHttpsTrafficOnly: true
+    publicNetworkAccess: 'Enabled' // Public endpoint for demo prepdocs; use private endpoints in production
     networkAcls: {
       defaultAction: 'Allow' // Public endpoints for demo; use 'Deny' for production
       bypass: 'AzureServices'

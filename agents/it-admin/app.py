@@ -10,7 +10,7 @@ import json
 import logging
 from datetime import datetime
 
-from azure.identity import DefaultAzureCredential
+from azure.identity import DefaultAzureCredential, get_bearer_token_provider
 from openai import AzureOpenAI
 
 from tools import (
@@ -57,11 +57,14 @@ def get_openai_client() -> AzureOpenAI:
     global _openai_client
     if _openai_client is None:
         credential = DefaultAzureCredential()
-        token = credential.get_token("https://cognitiveservices.azure.com/.default")
+        token_provider = get_bearer_token_provider(
+            credential,
+            "https://cognitiveservices.azure.com/.default",
+        )
         _openai_client = AzureOpenAI(
             azure_endpoint=AZURE_OPENAI_ENDPOINT,
             api_version="2024-06-01",
-            azure_ad_token=token.token
+            azure_ad_token_provider=token_provider,
         )
     return _openai_client
 

@@ -126,10 +126,6 @@ resource agentApp 'Microsoft.App/containerApps@2024-03-01' = {
               name: 'APPLICATIONINSIGHTS_CONNECTION_STRING'
               value: applicationInsightsConnectionString
             }
-            {
-              name: 'AZURE_CLIENT_ID'
-              value: ''  // Will use system-assigned managed identity
-            }
           ]
         }
       ]

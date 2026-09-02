@@ -9,10 +9,48 @@ from fastapi.testclient import TestClient
 # Add parent directory to path for imports
 sys.path.insert(0, '.')
 
+import app as app_module
 from app import app, TOOL_FUNCTIONS
 
 
 client = TestClient(app)
+
+
+class TestOpenAIClient:
+    """Test managed identity authentication for Azure OpenAI."""
+
+    @patch("app.AzureOpenAI")
+    @patch("app.get_bearer_token_provider")
+    @patch("app.DefaultAzureCredential")
+    def test_uses_refreshable_token_provider(
+        self,
+        mock_default_credential,
+        mock_get_bearer_token_provider,
+        mock_azure_openai,
+    ):
+        """Use a token provider so long-running containers refresh Entra tokens."""
+        credential = MagicMock()
+        token_provider = MagicMock()
+        openai_client = MagicMock()
+        mock_default_credential.return_value = credential
+        mock_get_bearer_token_provider.return_value = token_provider
+        mock_azure_openai.return_value = openai_client
+        app_module._openai_client = None
+
+        try:
+            assert app_module.get_openai_client() is openai_client
+            mock_get_bearer_token_provider.assert_called_once_with(
+                credential,
+                "https://cognitiveservices.azure.com/.default",
+            )
+            mock_azure_openai.assert_called_once_with(
+                azure_endpoint=app_module.AZURE_OPENAI_ENDPOINT,
+                api_version="2024-06-01",
+                azure_ad_token_provider=token_provider,
+            )
+            credential.get_token.assert_not_called()
+        finally:
+            app_module._openai_client = None
 
 
 class TestHealthEndpoint:
@@ -174,6 +212,14 @@ class TestToolInvocationEndpoint:
         response = client.post(
             "/tools/unknown_tool",
             json={"param": "value"}
+        )
+        assert response.status_code == 404
+
+    def test_delete_resource_not_exposed(self):
+        """Keep destructive infrastructure operations outside the agent API."""
+        response = client.post(
+            "/tools/delete_resource",
+            json={"resource_name": "web-app-prod"},
         )
         assert response.status_code == 404
 

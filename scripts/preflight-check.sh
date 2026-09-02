@@ -1,8 +1,8 @@
 #!/usr/bin/env bash
 # preflight-check.sh
-# Checks regional quota for Azure AI Search and Azure OpenAI (gpt-4o) before
-# attempting a full deployment. Emits actionable errors + region-change
-# instructions when quota is insufficient.
+# Checks regional quota for Azure AI Search and the exact Azure OpenAI models
+# before attempting a full deployment. Emits actionable errors + region-change
+# instructions when a model, SKU, or quota is unavailable.
 #
 # Exits 0 on success, 1 on quota/capacity issue.
 
@@ -12,7 +12,12 @@ LOCATION="${AZURE_LOCATION:-}"
 OPENAI_LOCATION="${AZURE_OPENAI_LOCATION:-$LOCATION}"
 SUBSCRIPTION_ID="${AZURE_SUBSCRIPTION_ID:-$(az account show --query id -o tsv 2>/dev/null)}"
 
-# Required gpt-4o capacity (TPM in thousands) - must match infra/modules/ai-services.bicep
+# These values must match infra/modules/ai-services.bicep.
+CHAT_MODEL_NAME="gpt-4o"
+CHAT_MODEL_VERSION="2024-11-20"
+EMBEDDING_MODEL_NAME="text-embedding-3-small"
+EMBEDDING_MODEL_VERSION="1"
+MODEL_SKU="Standard"
 REQUIRED_GPT4O_CAPACITY=10
 REQUIRED_EMBEDDING_CAPACITY=50
 
@@ -92,50 +97,113 @@ except Exception:
   fi
 fi
 
-# --- Azure OpenAI gpt-4o capacity check ---
-echo -n "  • Azure OpenAI gpt-4o capacity in '${OPENAI_LOCATION}'... "
+# --- Azure OpenAI model and SKU availability ---
+echo "  • Azure OpenAI model availability in '${OPENAI_LOCATION}':"
+MODEL_CATALOG_JSON=$(az cognitiveservices model list \
+  --location "$OPENAI_LOCATION" \
+  --subscription "$SUBSCRIPTION_ID" \
+  -o json 2>/dev/null || echo "")
+
+check_model_sku() {
+  MODEL_NAME="$1"
+  MODEL_VERSION="$2"
+  echo -n "    - ${MODEL_NAME} ${MODEL_VERSION} (${MODEL_SKU})... "
+
+  MODEL_SUPPORTED=$(printf '%s' "$MODEL_CATALOG_JSON" | python3 -c '
+import json
+import sys
+
+model_name, model_version, sku_name = sys.argv[1:]
+try:
+    models = json.load(sys.stdin)
+    supported = any(
+        item.get("model", {}).get("name") == model_name
+        and item.get("model", {}).get("version") == model_version
+        and sku_name in [sku.get("name") for sku in item.get("model", {}).get("skus", [])]
+        for item in models
+    )
+    print("true" if supported else "false")
+except Exception:
+    print("unknown")
+' "$MODEL_NAME" "$MODEL_VERSION" "$MODEL_SKU" 2>/dev/null)
+
+  if [ "$MODEL_SUPPORTED" = "true" ]; then
+    echo -e "${GREEN}OK${NC}"
+  elif [ "$MODEL_SUPPORTED" = "false" ]; then
+    echo -e "${RED}FAIL${NC}"
+    echo -e "${RED}      Required model version or SKU is unavailable in '${OPENAI_LOCATION}'.${NC}"
+    FAIL=1
+  else
+    echo -e "${RED}FAIL (could not parse model catalog)${NC}"
+    FAIL=1
+  fi
+}
+
+if [ -z "$MODEL_CATALOG_JSON" ]; then
+  echo -e "${RED}    FAIL (could not query model catalog)${NC}"
+  FAIL=1
+else
+  check_model_sku "$CHAT_MODEL_NAME" "$CHAT_MODEL_VERSION"
+  check_model_sku "$EMBEDDING_MODEL_NAME" "$EMBEDDING_MODEL_VERSION"
+fi
+
+# --- Azure OpenAI capacity checks ---
 OPENAI_USAGE_JSON=$(az rest --method get \
   --uri "https://management.azure.com/subscriptions/${SUBSCRIPTION_ID}/providers/Microsoft.CognitiveServices/locations/${OPENAI_LOCATION}/usages?api-version=2024-10-01" \
   2>/dev/null || echo "")
 
-if [ -z "$OPENAI_USAGE_JSON" ]; then
-  echo -e "${YELLOW}SKIPPED (could not query Cognitive Services usages)${NC}"
-else
-  GPT4O_AVAIL=$(echo "$OPENAI_USAGE_JSON" | python3 -c "
-import sys, json
-try:
-    d = json.load(sys.stdin)
-    for v in d.get('value', []):
-        name = v.get('name', {}).get('value', '')
-        # Match standard (non-regional/non-global) gpt-4o quota
-        if name == 'OpenAI.Standard.gpt-4o':
-            cur = v.get('currentValue', 0)
-            lim = v.get('limit', 0)
-            print(f\"{lim-cur}|{cur}|{lim}\")
-            sys.exit(0)
-    print('unknown')
-except Exception:
-    print('unknown')
-" 2>/dev/null)
+check_openai_capacity() {
+  MODEL_NAME="$1"
+  REQUIRED_CAPACITY="$2"
+  QUOTA_NAME="OpenAI.${MODEL_SKU}.${MODEL_NAME}"
+  echo -n "  • Azure OpenAI ${MODEL_NAME} capacity in '${OPENAI_LOCATION}'... "
 
-  if [ "$GPT4O_AVAIL" = "unknown" ] || [ -z "$GPT4O_AVAIL" ]; then
-    echo -e "${YELLOW}SKIPPED (no gpt-4o Standard quota reported in region)${NC}"
-    echo -e "${YELLOW}    Note: gpt-4o may not be available in '${OPENAI_LOCATION}'.${NC}"
+  CAPACITY=$(printf '%s' "$OPENAI_USAGE_JSON" | python3 -c '
+import json
+import sys
+
+quota_name = sys.argv[1]
+try:
+    usages = json.load(sys.stdin).get("value", [])
+    quota = next(
+        (item for item in usages if item.get("name", {}).get("value") == quota_name),
+        None,
+    )
+    if quota is None:
+        print("unknown")
+    else:
+        current = quota.get("currentValue", 0)
+        limit = quota.get("limit", 0)
+        print(f"{limit - current}|{current}|{limit}")
+except Exception:
+    print("unknown")
+' "$QUOTA_NAME" 2>/dev/null)
+
+  if [ "$CAPACITY" = "unknown" ] || [ -z "$CAPACITY" ]; then
+    echo -e "${RED}FAIL (no ${MODEL_SKU} quota reported)${NC}"
+    FAIL=1
   else
-    AVAIL="${GPT4O_AVAIL%%|*}"
-    REST="${GPT4O_AVAIL#*|}"
+    AVAIL="${CAPACITY%%|*}"
+    REST="${CAPACITY#*|}"
     CUR="${REST%%|*}"
     LIM="${REST#*|}"
-    # Convert floats to ints for comparison
     AVAIL_INT=$(printf '%.0f' "$AVAIL")
-    if [ "$AVAIL_INT" -ge "$REQUIRED_GPT4O_CAPACITY" ]; then
-      echo -e "${GREEN}OK${NC} (${AVAIL}K TPM available, need ${REQUIRED_GPT4O_CAPACITY}K)"
+    if [ "$AVAIL_INT" -ge "$REQUIRED_CAPACITY" ]; then
+      echo -e "${GREEN}OK${NC} (${AVAIL}K TPM available, need ${REQUIRED_CAPACITY}K)"
     else
-      echo -e "${RED}FAIL${NC} (${AVAIL}K TPM available, need ${REQUIRED_GPT4O_CAPACITY}K; ${CUR}/${LIM} used)"
-      echo -e "${RED}    Insufficient gpt-4o Standard quota in '${OPENAI_LOCATION}'.${NC}"
+      echo -e "${RED}FAIL${NC} (${AVAIL}K TPM available, need ${REQUIRED_CAPACITY}K; ${CUR}/${LIM} used)"
+      echo -e "${RED}    Insufficient ${MODEL_NAME} ${MODEL_SKU} quota in '${OPENAI_LOCATION}'.${NC}"
       FAIL=1
     fi
   fi
+}
+
+if [ -z "$OPENAI_USAGE_JSON" ]; then
+  echo -e "${RED}  • Azure OpenAI capacity... FAIL (could not query Cognitive Services usages)${NC}"
+  FAIL=1
+else
+  check_openai_capacity "$CHAT_MODEL_NAME" "$REQUIRED_GPT4O_CAPACITY"
+  check_openai_capacity "$EMBEDDING_MODEL_NAME" "$REQUIRED_EMBEDDING_CAPACITY"
 fi
 
 echo ""

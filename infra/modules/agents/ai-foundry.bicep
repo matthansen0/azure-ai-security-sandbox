@@ -1,4 +1,4 @@
-// ai-foundry.bicep - Azure AI Foundry Hub and Project for Agent Service
+// ai-foundry.bicep - Azure AI Foundry account and project for Agent Service
 // Deploys the foundation for Azure AI Agent Service
 
 @description('Location for all resources')
@@ -7,23 +7,14 @@ param location string
 @description('Tags to apply to all resources')
 param tags object = {}
 
-@description('Name of the AI Foundry Hub')
-param hubName string
+@description('Name of the AI Foundry account')
+param accountName string
 
 @description('Name of the AI Foundry Project')
 param projectName string
 
 @description('Log Analytics Workspace ID for diagnostics')
 param logAnalyticsWorkspaceId string
-
-@description('Storage account ID for the hub (required)')
-param storageAccountId string
-
-@description('Key Vault ID for the hub (required)')
-param keyVaultId string
-
-@description('Application Insights ID for the hub (optional)')
-param applicationInsightsId string = ''
 
 @description('Existing Azure OpenAI account name to connect to')
 param openAiAccountName string
@@ -37,45 +28,47 @@ param searchServiceName string
 @description('Existing Azure AI Search endpoint')
 param searchEndpoint string
 
-// AI Foundry Hub (workspace kind = Hub)
-resource hub 'Microsoft.MachineLearningServices/workspaces@2024-04-01' = {
-  name: hubName
+// AI Foundry account (project-based Foundry resource)
+resource account 'Microsoft.CognitiveServices/accounts@2025-10-01-preview' = {
+  name: accountName
   location: location
-  tags: union(tags, { 'azd-service-name': 'ai-foundry-hub' })
-  kind: 'Hub'
+  tags: union(tags, { 'azd-service-name': 'ai-foundry' })
+  kind: 'AIServices'
   identity: {
     type: 'SystemAssigned'
   }
+  sku: {
+    name: 'S0'
+  }
   properties: {
-    friendlyName: 'AI Security Sandbox Hub'
-    description: 'AI Foundry Hub for the Azure AI Security Sandbox'
-    storageAccount: storageAccountId
-    keyVault: keyVaultId
-    applicationInsights: !empty(applicationInsightsId) ? applicationInsightsId : null
-    publicNetworkAccess: 'Enabled'  // For demo purposes; use private endpoints in production
+    allowProjectManagement: true
+    customSubDomainName: accountName
+    disableLocalAuth: true
+    publicNetworkAccess: 'Enabled' // For demo purposes; use private endpoints in production
+    networkAcls: {
+      defaultAction: 'Allow'
+    }
   }
 }
 
-// AI Foundry Project (workspace kind = Project, linked to Hub)
-resource project 'Microsoft.MachineLearningServices/workspaces@2024-04-01' = {
+// AI Foundry Project (first-class child resource under the Foundry account)
+resource project 'Microsoft.CognitiveServices/accounts/projects@2025-10-01-preview' = {
+  parent: account
   name: projectName
   location: location
   tags: union(tags, { 'azd-service-name': 'ai-foundry-project' })
-  kind: 'Project'
   identity: {
     type: 'SystemAssigned'
   }
   properties: {
-    friendlyName: 'IT Admin Agent Project'
     description: 'Project for IT Admin troubleshooting agents'
-    hubResourceId: hub.id
-    publicNetworkAccess: 'Enabled'
+    displayName: 'IT Admin Agent Project'
   }
 }
 
 // Connection to existing Azure OpenAI
-resource openAiConnection 'Microsoft.MachineLearningServices/workspaces/connections@2024-04-01' = {
-  parent: hub
+resource openAiConnection 'Microsoft.CognitiveServices/accounts/projects/connections@2025-10-01-preview' = {
+  parent: project
   name: 'aoai-connection'
   properties: {
     category: 'AzureOpenAI'
@@ -90,8 +83,8 @@ resource openAiConnection 'Microsoft.MachineLearningServices/workspaces/connecti
 }
 
 // Connection to existing Azure AI Search
-resource searchConnection 'Microsoft.MachineLearningServices/workspaces/connections@2024-04-01' = {
-  parent: hub
+resource searchConnection 'Microsoft.CognitiveServices/accounts/projects/connections@2025-10-01-preview' = {
+  parent: project
   name: 'search-connection'
   properties: {
     category: 'CognitiveSearch'
@@ -99,15 +92,16 @@ resource searchConnection 'Microsoft.MachineLearningServices/workspaces/connecti
     authType: 'AAD'
     isSharedToAll: true
     metadata: {
+      ApiType: 'Azure'
       ResourceId: resourceId('Microsoft.Search/searchServices', searchServiceName)
     }
   }
 }
 
-// Diagnostic settings for Hub
-resource hubDiagnostics 'Microsoft.Insights/diagnosticSettings@2021-05-01-preview' = {
-  name: 'hub-diagnostics'
-  scope: hub
+// Diagnostic settings for Foundry account
+resource accountDiagnostics 'Microsoft.Insights/diagnosticSettings@2021-05-01-preview' = {
+  name: 'foundry-diagnostics'
+  scope: account
   properties: {
     workspaceId: logAnalyticsWorkspaceId
     logs: [
@@ -125,18 +119,12 @@ resource hubDiagnostics 'Microsoft.Insights/diagnosticSettings@2021-05-01-previe
   }
 }
 
-// Diagnostic settings for Project
+// Diagnostic settings for Foundry project
 resource projectDiagnostics 'Microsoft.Insights/diagnosticSettings@2021-05-01-preview' = {
   name: 'project-diagnostics'
   scope: project
   properties: {
     workspaceId: logAnalyticsWorkspaceId
-    logs: [
-      {
-        categoryGroup: 'allLogs'
-        enabled: true
-      }
-    ]
     metrics: [
       {
         category: 'AllMetrics'
@@ -147,12 +135,12 @@ resource projectDiagnostics 'Microsoft.Insights/diagnosticSettings@2021-05-01-pr
 }
 
 // Outputs
-output hubId string = hub.id
-output hubName string = hub.name
-output hubPrincipalId string = hub.identity.principalId
+output accountId string = account.id
+output accountName string = account.name
+output accountPrincipalId string = account.identity.principalId
 output projectId string = project.id
 output projectName string = project.name
 output projectPrincipalId string = project.identity.principalId
 
 // Project endpoint for Agent Service API
-output projectEndpoint string = 'https://${location}.api.azureml.ms/agents/v1.0/subscriptions/${subscription().subscriptionId}/resourceGroups/${resourceGroup().name}/providers/Microsoft.MachineLearningServices/workspaces/${project.name}'
+output projectEndpoint string = 'https://${account.name}.services.ai.azure.com/api/projects/${project.name}'

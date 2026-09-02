@@ -110,7 +110,6 @@ resource route 'Microsoft.Cdn/profiles/afdEndpoints/routes@2024-02-01' = {
     originGroup: {
       id: originGroup.id
     }
-    originPath: '/'
     supportedProtocols: ['Http', 'Https']
     patternsToMatch: ['/*']
     forwardingProtocol: 'HttpsOnly'

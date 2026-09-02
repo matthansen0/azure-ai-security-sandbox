@@ -568,14 +568,13 @@ This isn't optional for security. You need logs for:
 
 When you run `azd up --parameter useAgents=true`, you get:
 
-- **AI Foundry Hub + Project** - Management plane for AI agents
-- **Key Vault** - Secrets storage for AI Foundry
+- **AI Foundry account + Project** - Project-based management plane for AI agents
 - **IT Admin Agent Container App** - FastAPI application with GPT-4o tool-calling agent
 - **RBAC** - Managed identity roles for agent → OpenAI, agent → AI Foundry
 
 ### Why This Configuration
 
-**AI Foundry Hub/Project pattern:** Azure AI Foundry provides a centralized management plane for AI applications. The Hub is the shared resource (like a workspace), and the Project is per-application. This mirrors how enterprise teams organize AI work.
+**Project-based AI Foundry pattern:** Azure AI Foundry now uses a project-enabled AI Services account with first-class Project child resources. The account is the shared Foundry resource, and the Project provides the per-application management boundary for the IT Admin Agent.
 
 **Separate Container App:** The agent runs in its own Container App, isolated from the main RAG application. This gives independent scaling, deployments, and identity.
 
@@ -590,8 +589,6 @@ User: "Why is the web app slow?"
 ```
 
 Currently uses **mock data** for safety - no real infrastructure access. In production, you'd replace mock tools with real Azure Monitor queries, `az` CLI calls, etc.
-
-**Key Vault for Foundry:** AI Foundry requires a Key Vault for storing connection strings and secrets. This is created alongside the Hub.
 
 ### The Agent's Tools
 
