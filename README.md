@@ -339,7 +339,7 @@ If you enabled Defender plans via the add-on script and want to revert subscript
 ./scripts/disable-defender.sh --confirm
 ```
 
-The `--purge` flag triggers a `postdown` hook that automatically purges soft-deleted Cognitive Services and APIM resources, preventing conflicts on future deployments.
+The `--purge` flag triggers a `postdown` hook that automatically purges the environment's soft-deleted Azure OpenAI, Foundry account, and APIM resources, preventing conflicts on future deployments.
 
 ## 📖 Additional Resources
 

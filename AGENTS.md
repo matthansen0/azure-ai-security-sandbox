@@ -214,7 +214,7 @@ curl -s -X POST "$(azd env get-value FRONTDOOR_URL)/chat" \
 
 ### Tear Down (with soft-delete purge)
 ```bash
-azd down --force --purge  # Triggers postdown hook to purge APIM and Cognitive Services
+azd down --force --purge  # Purges APIM, Azure OpenAI, and the Foundry account
 ```
 
 > **Note:** `azd down` can sometimes be flaky. If resources aren't deleted, use:

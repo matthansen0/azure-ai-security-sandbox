@@ -177,10 +177,11 @@ hooks:
       # IMPORTANT: Purge ONLY resources associated with this azd environment.
       # Older versions of this hook purged *all* soft-deleted OpenAI/APIM resources
       # in the subscription, which is risky in shared subscriptions.
-      EXPECTED_COG_NAME="${AZURE_OPENAI_SERVICE:-}"
+      EXPECTED_OPENAI_NAME="${AZURE_OPENAI_SERVICE:-}"
+      EXPECTED_FOUNDRY_NAME="${AI_FOUNDRY_ACCOUNT_NAME:-}"
       EXPECTED_APIM_NAME="${APIM_SERVICE_NAME:-}"
-      if [ -z "$EXPECTED_COG_NAME" ] && [ -z "$EXPECTED_APIM_NAME" ]; then
-        echo "No environment-scoped resource names found (AZURE_OPENAI_SERVICE/APIM_SERVICE_NAME not set)."
+      if [ -z "$EXPECTED_OPENAI_NAME" ] && [ -z "$EXPECTED_FOUNDRY_NAME" ] && [ -z "$EXPECTED_APIM_NAME" ]; then
+        echo "No environment-scoped resource names found."
         echo "Skipping purge to avoid subscription-wide deletion."
         exit 0
       fi
@@ -189,21 +190,21 @@ hooks:
       echo "Checking for soft-deleted Cognitive Services..."
       DELETED_COG=$(az cognitiveservices account list-deleted --subscription "$SUBSCRIPTION_ID" -o json 2>/dev/null)
       if [ -n "$DELETED_COG" ] && [ "$DELETED_COG" != "[]" ]; then
-        if [ -n "$EXPECTED_COG_NAME" ]; then
-          MATCHING_COG=$(echo "$DELETED_COG" | jq -r --arg name "$EXPECTED_COG_NAME" '.[] | select(.name == $name) | "\(.name) \(.location)"')
-          if [ -n "$MATCHING_COG" ]; then
-            echo "$MATCHING_COG" | while read -r NAME LOCATION; do
-              if [ -n "$NAME" ]; then
-                echo "Purging Cognitive Services: $NAME in $LOCATION"
-                az cognitiveservices account purge --name "$NAME" --location "$LOCATION" --subscription "$SUBSCRIPTION_ID" 2>/dev/null || true
-              fi
-            done
-          else
-            echo "No soft-deleted Cognitive Services found for: $EXPECTED_COG_NAME"
+        for EXPECTED_COG_NAME in "$EXPECTED_OPENAI_NAME" "$EXPECTED_FOUNDRY_NAME"; do
+          if [ -n "$EXPECTED_COG_NAME" ]; then
+            MATCHING_COG=$(echo "$DELETED_COG" | jq -r --arg name "$EXPECTED_COG_NAME" '.[] | select(.name == $name) | "\(.name) \(.location)"')
+            if [ -n "$MATCHING_COG" ]; then
+              echo "$MATCHING_COG" | while read -r NAME LOCATION; do
+                if [ -n "$NAME" ]; then
+                  echo "Purging Cognitive Services: $NAME in $LOCATION"
+                  az cognitiveservices account purge --name "$NAME" --location "$LOCATION" --subscription "$SUBSCRIPTION_ID" 2>/dev/null || true
+                fi
+              done
+            else
+              echo "No soft-deleted Cognitive Services found for: $EXPECTED_COG_NAME"
+            fi
           fi
-        else
-          echo "AZURE_OPENAI_SERVICE not set. Skipping Cognitive Services purge."
-        fi
+        done
       else
         echo "No soft-deleted Cognitive Services found."
       fi
