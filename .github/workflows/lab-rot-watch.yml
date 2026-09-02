@@ -1,0 +1,140 @@
+name: Lab Rot Watch
+
+on:
+  schedule:
+    - cron: '0 14 * * 1'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  issues: write
+
+concurrency:
+  group: lab-rot-watch
+  cancel-in-progress: false
+
+jobs:
+  scan:
+    name: Static Lab Rot Scan
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+
+      - name: Run lab-rot scanner
+        id: scan
+        shell: bash
+        run: |
+          set -euo pipefail
+          mkdir -p .tmp/lab-rot
+          python .github/scripts/lab_rot_watch.py \
+            --repo-root . \
+            --output-json .tmp/lab-rot/findings.json \
+            --output-md .tmp/lab-rot/report.md
+
+          has_findings=$(python - <<'PY'
+          import json
+          d = json.load(open('.tmp/lab-rot/findings.json', encoding='utf-8'))
+          print('true' if d.get('has_findings') else 'false')
+          PY
+          )
+          finding_count=$(python - <<'PY'
+          import json
+          d = json.load(open('.tmp/lab-rot/findings.json', encoding='utf-8'))
+          print(d.get('finding_count', 0))
+          PY
+          )
+          run_date=$(date -u +%Y-%m-%d)
+
+          python - <<'PY'
+          import json
+          from pathlib import Path
+
+          data = json.load(open('.tmp/lab-rot/findings.json', encoding='utf-8'))
+          findings = data.get('findings', [])
+          canonical = '\n'.join(
+              f"[{f.get('severity', 'unknown')}] {f.get('title', '')} :: {f.get('detail', '')}"
+              for f in findings
+          )
+          Path('.tmp/lab-rot/findings-canonical.txt').write_text(canonical, encoding='utf-8')
+          PY
+
+          findings_hash=$(sha256sum .tmp/lab-rot/findings-canonical.txt | awk '{print $1}')
+          marker="<!-- lab-rot-fingerprint:${findings_hash} -->"
+          title="Lab-rot watch: review needed (week of ${run_date})"
+
+          {
+            cat .tmp/lab-rot/report.md
+            echo
+            echo "${marker}"
+          } > .tmp/lab-rot/report-with-marker.md
+
+          echo "has_findings=${has_findings}" >> "$GITHUB_OUTPUT"
+          echo "finding_count=${finding_count}" >> "$GITHUB_OUTPUT"
+          echo "run_date=${run_date}" >> "$GITHUB_OUTPUT"
+          echo "issue_title=${title}" >> "$GITHUB_OUTPUT"
+          echo "marker=${marker}" >> "$GITHUB_OUTPUT"
+
+      - name: Upload scan artifacts
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: lab-rot-scan
+          path: .tmp/lab-rot/
+
+      - name: Ensure lab-rot label exists
+        if: steps.scan.outputs.has_findings == 'true'
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          if ! gh label list --limit 200 --json name --jq '.[] | select(.name == "lab-rot") | .name' | grep -qx 'lab-rot'; then
+            gh label create lab-rot --color FBCA04 --description "Automated lab-rot findings"
+          fi
+
+      - name: Open or dedupe lab-rot issue
+        if: steps.scan.outputs.has_findings == 'true'
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          TITLE: ${{ steps.scan.outputs.issue_title }}
+          RUN_DATE: ${{ steps.scan.outputs.run_date }}
+          MARKER: ${{ steps.scan.outputs.marker }}
+        shell: bash
+        run: |
+          set -euo pipefail
+
+          # Dedupe: if an open lab-rot issue has the same findings fingerprint, comment there.
+          existing=""
+          open_issue_numbers=$(gh issue list --label lab-rot --state open --json number --jq '.[].number' || true)
+          if [[ -n "$open_issue_numbers" ]]; then
+            for issue_number in $open_issue_numbers; do
+              if gh issue view "$issue_number" --json body,comments \
+                | jq -e --arg marker "$MARKER" --rawfile findings .tmp/lab-rot/findings-canonical.txt '(.body // "" | contains($marker) or contains($findings)) or ((.comments // []) | map((.body // "") | contains($marker) or contains($findings)) | any)' >/dev/null; then
+                existing="$issue_number"
+                break
+              fi
+            done
+          fi
+
+          if [[ -n "$existing" ]]; then
+            gh issue comment "$existing" --body "Lab-rot watch rerun on ${RUN_DATE}: same findings still present.\n\n${MARKER}"
+            echo "Appended dedupe comment to issue #$existing"
+          else
+            gh issue create \
+              --title "$TITLE" \
+              --label "lab-rot" \
+              --body-file .tmp/lab-rot/report-with-marker.md
+            echo "Created new lab-rot issue"
+          fi
+
+      - name: No findings
+        if: steps.scan.outputs.has_findings != 'true'
+        run: echo "No lab-rot findings detected."
