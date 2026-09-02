@@ -180,6 +180,10 @@ hooks:
       EXPECTED_OPENAI_NAME="${AZURE_OPENAI_SERVICE:-}"
       EXPECTED_FOUNDRY_NAME="${AI_FOUNDRY_ACCOUNT_NAME:-}"
       EXPECTED_APIM_NAME="${APIM_SERVICE_NAME:-}"
+      EXPECTED_RESOURCE_GROUP="${RESOURCE_GROUP_NAME:-}"
+      if [ -z "$EXPECTED_RESOURCE_GROUP" ] && [ -n "${AZURE_ENV_NAME:-}" ]; then
+        EXPECTED_RESOURCE_GROUP="rg-${AZURE_ENV_NAME}"
+      fi
       if [ -z "$EXPECTED_OPENAI_NAME" ] && [ -z "$EXPECTED_FOUNDRY_NAME" ] && [ -z "$EXPECTED_APIM_NAME" ]; then
         echo "No environment-scoped resource names found."
         echo "Skipping purge to avoid subscription-wide deletion."
@@ -197,7 +201,12 @@ hooks:
               echo "$MATCHING_COG" | while read -r NAME LOCATION; do
                 if [ -n "$NAME" ]; then
                   echo "Purging Cognitive Services: $NAME in $LOCATION"
-                  az cognitiveservices account purge --name "$NAME" --location "$LOCATION" --subscription "$SUBSCRIPTION_ID" 2>/dev/null || true
+                  az cognitiveservices account purge \
+                    --name "$NAME" \
+                    --resource-group "$EXPECTED_RESOURCE_GROUP" \
+                    --location "$LOCATION" \
+                    --subscription "$SUBSCRIPTION_ID" \
+                    --output none 2>/dev/null || true
                 fi
               done
             else
