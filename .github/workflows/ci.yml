@@ -43,7 +43,10 @@ jobs:
         run: bash -n scripts/*.sh scripts/tests/*.sh
 
       - name: Check Python script syntax
-        run: python -m py_compile scripts/prepdocs-search-only.py
+        run: python -m py_compile scripts/prepdocs-search-only.py .github/scripts/lab_rot_watch.py
+
+      - name: Test lab-rot scanner
+        run: python .github/scripts/test_lab_rot_watch.py
 
       - name: Test deployment preflight
         run: bash scripts/tests/preflight-check.test.sh

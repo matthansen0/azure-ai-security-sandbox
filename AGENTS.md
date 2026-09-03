@@ -105,6 +105,7 @@ State tracking is written locally under `.defender/` (ignored by git).
 | `infra/modules/front-door.bicep` | WAF rules and mode configuration |
 | `infra/modules/agents/ai-foundry.bicep` | Project-based AI Foundry account + Project for agents |
 | `.github/workflows/ci.yml` | Pull-request gate for Bicep, shell, preflight, and agent tests |
+| `.github/scripts/lab_rot_watch.py` | Weekly high-signal checks for lab/validator parity and confirmed broken links |
 | `scripts/preflight-check.sh` | Regional Search and exact OpenAI model/SKU/quota validation |
 | `scripts/prepdocs-search-only.py` | Policy-aware Search ingestion fallback when Blob public access is disabled |
 | `agents/it-admin/app.py` | IT Admin Agent FastAPI application |
@@ -169,10 +170,14 @@ The GitHub Actions workflow runs these checks for pull requests and pushes to `m
 
 ```bash
 ./.venv-tests/bin/python -m pytest agents/it-admin/tests -q
+python .github/scripts/test_lab_rot_watch.py
 bash scripts/tests/preflight-check.test.sh
 bash -n scripts/*.sh scripts/tests/*.sh
+python -m py_compile scripts/prepdocs-search-only.py .github/scripts/lab_rot_watch.py
 az bicep build --file infra/main.bicep --outfile /tmp/azure-ai-security-sandbox-main.json
 ```
+
+The weekly lab-rot watcher is intentionally limited to reproducible learner-facing failures. API-version age, mutable dependency policy, image digest pinning, and broad SDK constraints are maintenance decisions and do not create lab-rot issues by themselves.
 
 The live preprovision hook also validates Search quota, exact model versions, Standard SKU availability, and available capacity for both `gpt-4o` and `text-embedding-3-small`.
 

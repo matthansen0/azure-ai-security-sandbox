@@ -160,7 +160,7 @@ These are powerful, but APIM policy expressions can be finicky: a policy express
 
 ### 🎓 Learn More
 
-- [APIM as AI Gateway](https://learn.microsoft.com/azure/api-management/api-management-ai-gateway-overview)
+- [AI gateway in Azure API Management](https://learn.microsoft.com/azure/api-management/genai-gateway-capabilities)
 - [Token counting with APIM](https://learn.microsoft.com/azure/api-management/azure-openai-token-limit-policy)
 - [APIM policy reference](https://learn.microsoft.com/azure/api-management/api-management-policies)
 
@@ -703,8 +703,6 @@ This sandbox is NOT production-ready. Here's what you'd add:
 | WAF Detection mode | Prevention mode (after tuning) |
 | 30-day logs | Long-term retention + Sentinel |
 | No backup | Cosmos DB backup, blob versioning |
-
-See [MIGRATION_GUIDE.md](MIGRATION_GUIDE.md) for detailed steps.
 
 ---
 
